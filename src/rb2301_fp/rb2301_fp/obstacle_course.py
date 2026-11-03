@@ -103,8 +103,8 @@ class ObstacleCourseNode(Node):
         if self.is_simulation:
             self.origin = (-0.61, -5.41)
             self.global_goal = (5.1,-2.6) 
-            self.robot_length = 0.2
-            self.robot_width = 0.2
+            self.robot_length = 0.22
+            self.robot_width = 0.21
             self.lookahead_distance = 0.05
             self.pursuit_speed = 0.3 #can tune based on curvature of lookahead arc
             self.goal_tolerance = 0.05
@@ -241,6 +241,8 @@ class ObstacleCourseNode(Node):
             #bresenham line algo used for free cell calculation
 
             heading = np.deg2rad(self.pose[2])
+            cx = self.pose[0] + 0.0725 * np.cos(heading)    # robot's center. the published pose is offset from robot's physical center
+            cy = self.pose[1] + 0.0725 * np.sin(heading)
             lidar_x = self.pose[0] + 0.114 * np.cos(heading)
             lidar_y = self.pose[1] + 0.114 * np.sin(heading)
             li, lj = world_to_grid(lidar_x, lidar_y,self.origin,self.occupancy_grid_resolution)                       # start cell: the LiDAR
@@ -256,8 +258,8 @@ class ObstacleCourseNode(Node):
                 cells = bresenham(li, lj, hi, hj)
                 for (i, j) in cells[:-1]:                            # everything before the hit: free
                     if 0 <= i < 301 and 0 <= j < 301:
-                        if self.occupancy_grid[i,j] != 99:
-                            self.occupancy_grid[i, j] = 0
+                        #if self.occupancy_grid[i,j] != 99: what if i comment out this line so that our robot only trusts the latest lidar?
+                        self.occupancy_grid[i, j] = 0
                 if 0 <= hi < 301 and 0 <= hj < 301:                  # the hit itself: occupied
                     self.occupancy_grid[hi, hj] = 99
             #now we done with building the occupancy grid
@@ -292,24 +294,21 @@ class ObstacleCourseNode(Node):
             #what if we replan A* on every other callback?
             if self.counter%2:
                 self.target = select_target(frontier, self.global_goal,self.origin,self.occupancy_grid_resolution)
-                self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],self.origin,self.occupancy_grid_resolution),
+                self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
                             (self.target[0], self.target[1]))
                 if not self.path:
                     self.get_logger().info('no path found bro')
                     self.target = select_target2(buffered,self.occupancy_grid,self.global_goal,self.occupancy_grid_resolution,self.origin)
-                    self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],self.origin,self.occupancy_grid_resolution),
+                    self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
                                 (self.target[0], self.target[1]))
                     if not self.path:
                         self.get_logger().info('still no path found bro')
-
             
-
-            
-            #i think now i have an A* path that is replanned whenever half the previous plan has finished
+            #now i have an A* path that is replanned whenever half the previous plan has finished
             #now i need the pid controller
 
             if self.path:
-                vx, vy = pure_pursuit(self.path, self.pose[0], self.pose[1], self.origin,self.occupancy_grid_resolution,
+                vx, vy = pure_pursuit(self.path, cx, cy, self.origin,self.occupancy_grid_resolution,
                                       self.lookahead_distance,self.pursuit_speed,self.goal_tolerance)
                 self.move_2D(vx, vy, 0.0)      # no heading control, just strafing it up
             else:
@@ -327,6 +326,7 @@ class ObstacleCourseNode(Node):
             #bresenham line algo used for free cell calculation
             
             heading = np.deg2rad(self.pose[2])
+            #i think need to find out the offset, if any, between the real robot's published pose and its physical center, so robot doesnt scrape shit
             lidar_x = self.pose[0] + 0.045 * np.cos(heading)
             lidar_y = self.pose[1] + 0.045 * np.sin(heading)
             li, lj = world_to_grid(lidar_x, lidar_y,self.origin,self.occupancy_grid_resolution)                       # start cell: the LiDAR
