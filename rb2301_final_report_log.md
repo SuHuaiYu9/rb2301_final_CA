@@ -42,6 +42,30 @@ One entry per decision or mistake. Fill in **Observed** and **Fix** when you fin
   3. **Two errors on the first tick:** the halfway replan fails, then the bottom block immediately retries A* with the same inputs.
 - **Fix:**
 
+## D3: Fallback target when A* finds no path (2026-11-03)
+- **Decision:** if A* to the frontier target fails, choose a fallback target with `select_target2` and run A* again. The fallback is the free, seen, non-buffered cell closest to the goal, and doesn't have to be a frontier cell. If that A* also fails, log "still no path found bro".
+- **Why:** the diagnosis at the time was that "no path found bro" happens because there are no suitable frontier cells to pick as a target. See also M2.
+- **Observed:**
+- **Fix:**
+
+## D4: Replan and re-choose the target every other tick (2026-11-03)
+- **Decision:** instead of replanning at halfway along the path, choose a new frontier target and rerun A* whenever `self.counter % 2` is true. That's every other timer tick (every 0.1 s). The halfway version is still in the file, commented out.
+- **Why:** the intent was to replan and re-choose the target every tick. As written, the code does it every other tick.
+- **Observed:**
+- **Fix:**
+
+## D5: Obstacle buffer calculated from the robot's size (2026-11-03)
+- **Decision:** buffer radius = `round((robot_length / 2) / occupancy_grid_resolution)`, with `robot_length = 0.3` m. That's `round(7.5)` = 8 cells (0.16 m), replacing the 9 cells tried in M1. `robot_width = 0.2` m is defined but not used.
+- **Why:** (not recorded)
+- **Observed:**
+- **Fix:**
+
+## D6: Lookahead distance changed from 0.3 m to 0.05 m (2026-11-03)
+- **Decision:** `lookahead_distance` changed from 0.3 to 0.05. `goal_tolerance` is also 0.05.
+- **Why:** (not recorded)
+- **Observed:**
+- **Fix:**
+
 ## E1: `select_target` crashes when there are no frontier cells
 - **Observed (2D tests):** `ValueError: attempt to get argmin of an empty sequence` from `np.argmin(d)` in `select_target`, raised inside `timer_callback`. Seen in 1 of 11 layouts, and again in 1 of 8 in the M2 test.
 - **Fix:**
@@ -49,4 +73,4 @@ One entry per decision or mistake. Fill in **Observed** and **Fix** when you fin
 ---
 
 ### Path-following setup (for reference)
-Pure pursuit with the robot treated as a point that can move in any direction: each tick it drives at a constant speed straight towards the path point `lookahead_distance` ahead of it, and it stops within `goal_tolerance` of the last path point. Starting values: lookahead 0.3 m, speed 0.3 m/s, tolerance 0.05 m.
+Pure pursuit with the robot treated as a point that can move in any direction: each tick it drives at a constant speed straight towards the path point `lookahead_distance` ahead of it, and it stops within `goal_tolerance` of the last path point. Starting values: lookahead 0.3 m, speed 0.3 m/s, tolerance 0.05 m. Current values: lookahead 0.05 m (see D6), speed 0.3 m/s, tolerance 0.05 m.
