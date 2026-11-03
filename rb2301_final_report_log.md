@@ -85,6 +85,23 @@ One entry per decision or mistake. Fill in **Observed** and **Fix** when you fin
 - **Observed (Gazebo):** far fewer "no path found bro" messages.
 - **Fix:**
 
+## M3: Robot won't use a gap that is physically wide enough (Gazebo) (2026-11-03)
+- **Observed (Gazebo; 2 cm cells, 6-cell buffer, planning from the robot centre, 99 cells stay 99):** the robot gets stuck in front of three obstacles, even though the rightmost gap is physically wide enough for it.
+- **Why:**
+  1. **Not the square buffer.** The Gazebo robot model is about 0.215 m long × 0.22 m wide, essentially square. The 6-cell buffer (0.12 m) closely matches half its width (0.11 m). It's the real robot (0.20 × 0.23 m) that isn't square.
+  2. **The grid makes gaps look smaller.** A LiDAR hit marks the whole 2 cm cell it lands in. A* needs every path cell to be at least 7 cells from an occupied cell (the buffer covers 6), so the two obstacles' occupied cells must be at least 14 cells apart. Gaps under 0.26 m are never usable, 0.26–0.28 m sometimes, and 0.28 m or more always. A gap that is "technically big enough" for a 0.22 m robot (0.22–0.27 m) is rejected.
+  3. **Obstacles look thicker in the map than they are.** In 2D tests, stray occupied cells sat typically about 4 cm (2 cells) from the real surface, and there are more of them when 99 cells are never cleared. Each extra cell on an edge facing the gap adds 2 cm to the smallest usable gap.
+- **Options and their trade-offs:**
+
+  | Change | Smallest gap A* uses | Trade-off |
+  |---|---|---|
+  | Current: 2 cm cells, 6-cell buffer (0.12 m) | 0.26–0.28 m | — |
+  | 2 cm cells, 5-cell buffer (0.10 m) | about 0.22–0.24 m | 0.10 m is less than the 0.11 m half-width, so it scrapes |
+  | 1 cm cells, 11-cell buffer (0.11 m; what `robot_length` 0.22 gives at 1 cm) | 0.23–0.24 m | Zero margin over the half-width; 4× as many cells. The grid size must be set in metres: a fixed 301 × 301 grid at 1 cm only covers 3 m, the robot starts outside it, and `select_target` raises a `ValueError` (seen when 1 cm was first tried) |
+  | 1 cm cells, 12-cell buffer (0.12 m) | 0.25–0.26 m | Same safety margin as now; only 1–2 cm better |
+- **Planned fix:** try a finer grid (1 cm cells).
+- **Fix:**
+
 ## R1: First runs on the real robot (2026-11-03)
 - **Setup:**
   - Real course is about 3 m × 3 m, with the same general shape as the Gazebo course. Coordinates are measured in the CA2 maze frame with `./fp.sh --calibrate`.
