@@ -17,7 +17,7 @@ import math
 np.set_printoptions(2, suppress=True, threshold=np.inf) # Print numpy arrays to specified d.p., suppress scientific notation and do not truncate
 set_logger_level("obstaclecourse", level=LoggingSeverity.INFO) # Configure to either LoggingSeverity.INFO or LoggingSeverity.DEBUG  
 occupancy_grid_resolution = 0.02
-origin = (0,0)
+origin = (-0.61, -5.41)
 global_goal = (5.1,-2.6) #for sim
 
 _PACKAGE_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -133,6 +133,7 @@ class ObstacleCourseNode(Node):
         self.path = None
         self.started = False
         self.target = None
+        self.last_scan = None
 
         
 
@@ -206,7 +207,8 @@ class ObstacleCourseNode(Node):
         
         if self.is_simulation: #for sim city 4
         #use lidar scan to update the occupancy grid map
-            pass
+            if self.last_scan == None:
+                return
             #use bresenham to register free cells first:0, then whatever coordaintes the lidar scan returns, convert it to grid cells,
             #then update them as occupied cells: 99
             #bresenham line algo used for free cell calculation
@@ -237,7 +239,12 @@ class ObstacleCourseNode(Node):
             buffered = inflate_square(occ, 8)      # 8 cells x 2 cm = 0.16 m, buffered is the grid to use for traversal
             frontier = frontier_cells(buffered, self.occupancy_grid)
             robot_cell = world_to_grid(self.pose[0],self.pose[1],origin,occupancy_grid_resolution)
+
+
+            #if A* returns empty list, get logger error(no path found)
+            #the below lines only triggers on the first time of planning
             
+
             if not self.started:
                 self.target = select_target(frontier, global_goal) #select target based on which frontier cell closest to global goal
             elif self.path and halfway_reached(self.path, robot_cell):
@@ -247,16 +254,20 @@ class ObstacleCourseNode(Node):
                             (self.target[0], self.target[1]))
                 if not self.path:
                     self.get_logger().error('no path found bro')
+                self.started =  True
 
-            #if A* returns empty list, get logger error(no path found)
-            #the below lines only triggers on the first time of planning
             if not self.path:
                 self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],origin,occupancy_grid_resolution),
                             (self.target[0],self.target[1]))
+                self.started = True
                 if not self.path:
                     self.get_logger().error('no path found bro')
-            #i think now i have an A* path that is replanned whenever half the previous plan has finished
             
+
+            
+            #i think now i have an A* path that is replanned whenever half the previous plan has finished
+            #now i need the pid controller
+
 
 
 
@@ -379,7 +390,8 @@ def A_star(map_array, startcell, goalcell):
         for neighbour in nb_list:
             ni, nj = neighbour
             if 0 <= ni < rows and 0 <= nj < cols and not grid[ni][nj] and neighbour not in closed:
-                new_g = g[i][j] + 1
+                diag = (nj!=j) and (ni!=i)
+                new_g = g[i][j] + (1.414 if diag else 1)#diagonal travel cost is 1.414  
                 if new_g < g[ni][nj]:
                     g[ni][nj] = new_g
                     parent_i[ni][nj] = i
