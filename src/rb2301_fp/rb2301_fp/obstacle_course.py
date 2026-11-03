@@ -17,20 +17,8 @@ import math
 #my one
 np.set_printoptions(2, suppress=True, threshold=np.inf) # Print numpy arrays to specified d.p., suppress scientific notation and do not truncate
 set_logger_level("obstaclecourse", level=LoggingSeverity.INFO) # Configure to either LoggingSeverity.INFO or LoggingSeverity.DEBUG  
-occupancy_grid_resolution = 0.02
-#for sim
-# origin = (-0.61, -5.41)
-# global_goal = (5.1,-2.6) 
 
-#for real
-origin = (-1.5, -1.5)
-global_goal = (0.102, 0.758)
 
-lookahead_distance = 0.05
-pursuit_speed = 0.3 #can tune based on curvature of lookahead arc
-goal_tolerance = 0.05
-robot_length = 0.3
-robot_width = 0.2
 
 
 _PACKAGE_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -42,11 +30,11 @@ _PACKAGE_DIR = os.path.dirname(os.path.realpath(__file__))
 # away from the grid's origin corner, not exactly on it. This matches how the
 # Gazebo world and the real maze are physically laid out (goal tape/markers
 # sit in the middle of a cell, not on its boundary line).
-def grid_to_world(i:int, j:int, origin:tuple, resolution:float=occupancy_grid_resolution) -> tuple:
+def grid_to_world(i:int, j:int, origin:tuple, resolution:float) -> tuple:
     '''Convert grid index (i, j) to the world (x, y) coordinate of that cell's centre.'''
     return (origin[0] + (i + 0.5) * resolution, origin[1] + (j + 0.5) * resolution)
 
-def world_to_grid(x:float, y:float, origin:tuple, resolution:float=occupancy_grid_resolution) -> tuple:
+def world_to_grid(x:float, y:float, origin:tuple, resolution:float) -> tuple:
     '''Convert a world (x, y) coordinate to the grid index (i, j) of the cell containing it.'''
     return (int(np.floor((x - origin[0]) / resolution)), int(np.floor((y - origin[1]) / resolution)))
 
@@ -111,6 +99,29 @@ class ObstacleCourseNode(Node):
         self.frame = self.course = None
         self._ticks = 0
         self.lidar_rays = 0
+
+        if self.is_simulation:
+            self.origin = (-0.61, -5.41)
+            self.global_goal = (5.1,-2.6) 
+            self.robot_length = 0.2
+            self.robot_width = 0.2
+            self.lookahead_distance = 0.05
+            self.pursuit_speed = 0.3 #can tune based on curvature of lookahead arc
+            self.goal_tolerance = 0.05
+            self.occupancy_grid_resolution = 0.02
+
+        else:
+            self.origin = (-1.5, -1.5)
+            self.global_goal = (0.102, 0.758)
+            self.robot_length = 0.3
+            self.robot_width = 0.2
+            self.lookahead_distance = 0.05
+            self.pursuit_speed = 0.3 #can tune based on curvature of lookahead arc
+            self.goal_tolerance = 0.05
+            self.occupancy_grid_resolution = 0.02
+
+        
+        
 
         if is_simulation:
             self.max_translate_velocity = 1.4
@@ -232,7 +243,7 @@ class ObstacleCourseNode(Node):
             heading = np.deg2rad(self.pose[2])
             lidar_x = self.pose[0] + 0.114 * np.cos(heading)
             lidar_y = self.pose[1] + 0.114 * np.sin(heading)
-            li, lj = world_to_grid(lidar_x, lidar_y,origin,occupancy_grid_resolution)                       # start cell: the LiDAR
+            li, lj = world_to_grid(lidar_x, lidar_y,self.origin,self.occupancy_grid_resolution)                       # start cell: the LiDAR
 
             for scan_idx in range(len(self.last_scan)):
                 hypotenus = self.last_scan[scan_idx]
@@ -240,7 +251,7 @@ class ObstacleCourseNode(Node):
                     continue
                 theta = heading + scan_idx * (6.28 / 359)
                 hi, hj = world_to_grid(lidar_x + hypotenus * np.cos(theta),
-                                lidar_y + hypotenus * np.sin(theta),origin, occupancy_grid_resolution)  # end cell: where the ray hit
+                                lidar_y + hypotenus * np.sin(theta),self.origin, self.occupancy_grid_resolution)  # end cell: where the ray hit
 
                 cells = bresenham(li, lj, hi, hj)
                 for (i, j) in cells[:-1]:                            # everything before the hit: free
@@ -252,7 +263,7 @@ class ObstacleCourseNode(Node):
             #now we done with building the occupancy grid
             occ = (self.occupancy_grid == 99)                     # rebuild from the raw grid every time
             #should the below 3 arrays be variables or object attributes? for eg: self.buffered instead
-            buffered = inflate_square(occ, round((robot_length/2)/occupancy_grid_resolution))      # 8 cells x 2 cm = 0.16 m, buffered is the grid to use for traversal
+            buffered = inflate_square(occ, round((self.robot_length/2)/self.occupancy_grid_resolution))      # 8 cells x 2 cm = 0.16 m, buffered is the grid to use for traversal
             frontier = frontier_cells(buffered, self.occupancy_grid)
             
 
@@ -265,14 +276,14 @@ class ObstacleCourseNode(Node):
             # elif self.path and halfway_reached(self.path, robot_cell):
             #     self.target = select_target(frontier, global_goal) #select target based on which frontier cell closest to global goal
             #     #replan A*, else keep driving along the last planned path to target
-            #     self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],origin,occupancy_grid_resolution),
+            #     self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],self.origin,self.occupancy_grid_resolution),
             #                 (self.target[0], self.target[1]))
             #     if not self.path:
             #         self.get_logger().error('no path found bro')
             #     self.started =  True
 
             # if not self.path:
-            #     self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],origin,occupancy_grid_resolution),
+            #     self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],self.origin,self.occupancy_grid_resolution),
             #                 (self.target[0],self.target[1]))
             #     self.started = True
             #     if not self.path:
@@ -280,13 +291,13 @@ class ObstacleCourseNode(Node):
 
             #what if we replan A* on every other callback?
             if self.counter%2:
-                self.target = select_target(frontier, global_goal)
-                self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],origin,occupancy_grid_resolution),
+                self.target = select_target(frontier, self.global_goal,self.origin,self.occupancy_grid_resolution)
+                self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],self.origin,self.occupancy_grid_resolution),
                             (self.target[0], self.target[1]))
                 if not self.path:
                     self.get_logger().info('no path found bro')
-                    self.target = select_target2(buffered,self.occupancy_grid,global_goal)
-                    self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],origin,occupancy_grid_resolution),
+                    self.target = select_target2(buffered,self.occupancy_grid,self.global_goal,self.occupancy_grid_resolution,self.origin)
+                    self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],self.origin,self.occupancy_grid_resolution),
                                 (self.target[0], self.target[1]))
                     if not self.path:
                         self.get_logger().info('still no path found bro')
@@ -298,7 +309,8 @@ class ObstacleCourseNode(Node):
             #now i need the pid controller
 
             if self.path:
-                vx, vy = pure_pursuit(self.path, self.pose[0], self.pose[1], origin)
+                vx, vy = pure_pursuit(self.path, self.pose[0], self.pose[1], self.origin,self.occupancy_grid_resolution,
+                                      self.lookahead_distance,self.pursuit_speed,self.goal_tolerance)
                 self.move_2D(vx, vy, 0.0)      # no heading control, just strafing it up
             else:
                 self.move_2D(0.0, 0.0, 0.0)    # no path to follow
@@ -317,7 +329,7 @@ class ObstacleCourseNode(Node):
             heading = np.deg2rad(self.pose[2])
             lidar_x = self.pose[0] + 0.045 * np.cos(heading)
             lidar_y = self.pose[1] + 0.045 * np.sin(heading)
-            li, lj = world_to_grid(lidar_x, lidar_y,origin,occupancy_grid_resolution)                       # start cell: the LiDAR
+            li, lj = world_to_grid(lidar_x, lidar_y,self.origin,self.occupancy_grid_resolution)                       # start cell: the LiDAR
             
             for scan_idx in range(len(self.last_scan)):
                 hypotenus = self.last_scan[scan_idx]
@@ -325,7 +337,7 @@ class ObstacleCourseNode(Node):
                     continue
                 theta = heading + scan_idx * 2 * np.pi / len(self.last_scan)
                 hi, hj = world_to_grid(lidar_x + hypotenus * np.cos(theta),
-                                lidar_y + hypotenus * np.sin(theta),origin, occupancy_grid_resolution)  # end cell: where the ray hit
+                                lidar_y + hypotenus * np.sin(theta),self.origin, self.occupancy_grid_resolution)  # end cell: where the ray hit
             
                 cells = bresenham(li, lj, hi, hj)
                 for (i, j) in cells[:-1]:                            # everything before the hit: free
@@ -337,17 +349,17 @@ class ObstacleCourseNode(Node):
             #now we done with building the occupancy grid
             occ = (self.occupancy_grid == 99)                     # rebuild from the raw grid every time
             #should the below 3 arrays be variables or object attributes? for eg: self.buffered instead
-            buffered = inflate_square(occ, round((robot_length/2)/occupancy_grid_resolution))      # 8 cells x 2 cm = 0.16 m, buffered is the grid to use for traversal
+            buffered = inflate_square(occ, round((self.robot_length/2)/self.occupancy_grid_resolution))      # 8 cells x 2 cm = 0.16 m, buffered is the grid to use for traversal
             frontier = frontier_cells(buffered, self.occupancy_grid)
             #what if we replan A* on every other callback?
             if self.counter%2:
-                self.target = select_target(frontier, global_goal)
-                self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],origin,occupancy_grid_resolution),
+                self.target = select_target(frontier, self.global_goal,self.origin,self.occupancy_grid_resolution)
+                self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],self.origin,self.occupancy_grid_resolution),
                             (self.target[0], self.target[1]))
                 if not self.path:
                     self.get_logger().info('no path found bro')
-                    self.target = select_target2(buffered,self.occupancy_grid,global_goal)
-                    self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],origin,occupancy_grid_resolution),
+                    self.target = select_target2(buffered,self.occupancy_grid,self.global_goal,self.occupancy_grid_resolution,self.origin)
+                    self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],self.origin,self.occupancy_grid_resolution),
                                 (self.target[0], self.target[1]))
                     if not self.path:
                         self.get_logger().info('still no path found bro')
@@ -359,16 +371,17 @@ class ObstacleCourseNode(Node):
             #now i need the pid controller
             
             if self.path:
-                vx, vy = pure_pursuit(self.path, self.pose[0], self.pose[1], origin)
+                vx, vy = pure_pursuit(self.path, self.pose[0], self.pose[1], self.origin,self.occupancy_grid_resolution,self.lookahead_distance,
+                                      self.pursuit_speed,self.goal_tolerance)
                 self.move_2D(vx, vy, 0.0)      # no heading control, just strafing it up
             else:
                 self.move_2D(0.0, 0.0, 0.0)    # no path to follow
             
         
 
-def select_target2(buffered, raw, global_goal):
+def select_target2(buffered, raw, global_goal,occupancy_grid_resolution,origin):
 #fuck i need a grid that shows unoccupied cells as 0 but the obstacles must be expanded as well. i have buffered that shows every occupied 
-#cell as True, and i have the original occupancy grid unexpanded that shows the free cells as 0. those cells that are 0 and not a buffer are free
+#cell as True, and i have the self.original occupancy grid unexpanded that shows the free cells as 0. those cells that are 0 and not a buffer are free
 #known cells
     free = ~buffered
     known = (raw==0)
@@ -387,7 +400,7 @@ def select_target2(buffered, raw, global_goal):
 
 
 
-def select_target(frontier,global_goal):
+def select_target(frontier,global_goal,origin,occupancy_grid_resolution):
     gi, gj = global_goal
     #convert global goal world coordinates into grid coords
     gi, gj = world_to_grid(gi,gj,origin,occupancy_grid_resolution)
@@ -512,8 +525,8 @@ def A_star(map_array, startcell, goalcell):
                     heapq.heappush(open_list, (new_g + calculate_h(neighbour, goalcell), ni, nj))
     return []
 
-def pure_pursuit(path, x, y, origin, resolution=occupancy_grid_resolution,
-                 lookahead=lookahead_distance, speed=pursuit_speed):
+def pure_pursuit(path, x, y, origin, resolution,
+                 lookahead, speed,goal_tolerance):
     
     pts = np.array(path, dtype=float)                       # grid (i, j) of every path cell
     wx = origin[0] + (pts[:, 0] + 0.5) * resolution         # world x of cell center
