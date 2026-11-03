@@ -18,8 +18,14 @@ import math
 np.set_printoptions(2, suppress=True, threshold=np.inf) # Print numpy arrays to specified d.p., suppress scientific notation and do not truncate
 set_logger_level("obstaclecourse", level=LoggingSeverity.INFO) # Configure to either LoggingSeverity.INFO or LoggingSeverity.DEBUG  
 occupancy_grid_resolution = 0.02
-origin = (-0.61, -5.41)
-global_goal = (5.1,-2.6) #for sim
+#for sim
+# origin = (-0.61, -5.41)
+# global_goal = (5.1,-2.6) 
+
+#for real
+origin = (-1.5, -1.5)
+global_goal = (0.102, 0.758)
+
 lookahead_distance = 0.05
 pursuit_speed = 0.3 #can tune based on curvature of lookahead arc
 goal_tolerance = 0.05
@@ -212,19 +218,6 @@ class ObstacleCourseNode(Node):
             return # Calibration mode: look, don't drive
         # print(f"x:{self.pose[0]}, y:{self.pose[1]}")
         # self.move_2D(0.5,0,0)
-        if self.last_scan is not None and not self.is_simulation:
-            s = np.nan_to_num(np.array(self.last_scan, float), nan=99.0, posinf=99.0)
-            s[s < 0.05] = 99.0                                  # ignore invalid readings
-            k = int(np.argmin(s))                               # index of the nearest return
-            heading = np.deg2rad(self.pose[2])
-            theta = heading + k * 2 * np.pi / len(s)
-            lx = self.pose[0] + 0.114 * np.cos(heading)
-            ly = self.pose[1] + 0.114 * np.sin(heading)
-            hx, hy = lx + s[k] * np.cos(theta), ly + s[k] * np.sin(theta)
-            self.get_logger().info(f"{len(s)} readings | nearest {s[k]:.2f} m at index {k} "
-                                   f"({k * 360 / len(s):.0f} deg) | maze ({hx:.2f}, {hy:.2f})",
-                                   throttle_duration_sec=0.5)
-            return
         ###### INSERT CODE HERE ######
         self.counter+=1
         
@@ -322,8 +315,8 @@ class ObstacleCourseNode(Node):
             #bresenham line algo used for free cell calculation
             
             heading = np.deg2rad(self.pose[2])
-            lidar_x = self.pose[0] + 0.114 * np.cos(heading)
-            lidar_y = self.pose[1] + 0.114 * np.sin(heading)
+            lidar_x = self.pose[0] + 0.045 * np.cos(heading)
+            lidar_y = self.pose[1] + 0.045 * np.sin(heading)
             li, lj = world_to_grid(lidar_x, lidar_y,origin,occupancy_grid_resolution)                       # start cell: the LiDAR
             
             for scan_idx in range(len(self.last_scan)):
