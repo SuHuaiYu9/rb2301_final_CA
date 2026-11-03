@@ -14,14 +14,17 @@ from sensor_msgs.msg import LaserScan
 import heapq
 import math
 
+#my one
 np.set_printoptions(2, suppress=True, threshold=np.inf) # Print numpy arrays to specified d.p., suppress scientific notation and do not truncate
 set_logger_level("obstaclecourse", level=LoggingSeverity.INFO) # Configure to either LoggingSeverity.INFO or LoggingSeverity.DEBUG  
 occupancy_grid_resolution = 0.02
 origin = (-0.61, -5.41)
 global_goal = (5.1,-2.6) #for sim
-lookahead_distance = 0.3
+lookahead_distance = 0.05
 pursuit_speed = 0.3 #can tune based on curvature of lookahead arc
 goal_tolerance = 0.05
+robot_length = 0.3
+robot_width = 0.2
 
 
 _PACKAGE_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -138,6 +141,7 @@ class ObstacleCourseNode(Node):
         self.started = False
         self.target = None
         self.last_scan = None
+        self.counter = 0
 
         
 
@@ -208,6 +212,7 @@ class ObstacleCourseNode(Node):
         # print(f"x:{self.pose[0]}, y:{self.pose[1]}")
         # self.move_2D(0.5,0,0)
         ###### INSERT CODE HERE ######
+        self.counter+=1
         
         if self.is_simulation: #for sim city 4
         #use lidar scan to update the occupancy grid map
@@ -240,32 +245,44 @@ class ObstacleCourseNode(Node):
             #now we done with building the occupancy grid
             occ = (self.occupancy_grid == 99)                     # rebuild from the raw grid every time
             #should the below 3 arrays be variables or object attributes? for eg: self.buffered instead
-            buffered = inflate_square(occ, 8)      # 8 cells x 2 cm = 0.16 m, buffered is the grid to use for traversal
+            buffered = inflate_square(occ, round((robot_length/2)/occupancy_grid_resolution))      # 8 cells x 2 cm = 0.16 m, buffered is the grid to use for traversal
             frontier = frontier_cells(buffered, self.occupancy_grid)
-            robot_cell = world_to_grid(self.pose[0],self.pose[1],origin,occupancy_grid_resolution)
 
 
-            #if A* returns empty list, get logger error(no path found)
-            #the below lines only triggers on the first time of planning
-            
+            '''the below commented code only replans every half the previous path'''
+            # #if A* returns empty list, get logger error(no path found)
+            # #the below lines only triggers on the first time of planning
+            # if not self.started:
+            #     self.target = select_target(frontier, global_goal) #select target based on which frontier cell closest to global goal
+            # elif self.path and halfway_reached(self.path, robot_cell):
+            #     self.target = select_target(frontier, global_goal) #select target based on which frontier cell closest to global goal
+            #     #replan A*, else keep driving along the last planned path to target
+            #     self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],origin,occupancy_grid_resolution),
+            #                 (self.target[0], self.target[1]))
+            #     if not self.path:
+            #         self.get_logger().error('no path found bro')
+            #     self.started =  True
 
-            if not self.started:
-                self.target = select_target(frontier, global_goal) #select target based on which frontier cell closest to global goal
-            elif self.path and halfway_reached(self.path, robot_cell):
-                self.target = select_target(frontier, global_goal) #select target based on which frontier cell closest to global goal
-                #replan A*, else keep driving along the last planned path to target
+            # if not self.path:
+            #     self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],origin,occupancy_grid_resolution),
+            #                 (self.target[0],self.target[1]))
+            #     self.started = True
+            #     if not self.path:
+            #         self.get_logger().error('no path found bro')
+
+            #what if we replan A* on every other callback?
+            if self.counter%2:
+                self.target = select_target(frontier, global_goal)
                 self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],origin,occupancy_grid_resolution),
                             (self.target[0], self.target[1]))
                 if not self.path:
-                    self.get_logger().error('no path found bro')
-                self.started =  True
+                    self.get_logger().info('no path found bro')
+                    self.target = select_target2(buffered,self.occupancy_grid,global_goal)
+                    self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],origin,occupancy_grid_resolution),
+                                (self.target[0], self.target[1]))
+                    if not self.path:
+                        self.get_logger().info('still no path found bro')
 
-            if not self.path:
-                self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],origin,occupancy_grid_resolution),
-                            (self.target[0],self.target[1]))
-                self.started = True
-                if not self.path:
-                    self.get_logger().error('no path found bro')
             
 
             
@@ -284,6 +301,27 @@ class ObstacleCourseNode(Node):
 
         # else: #for real world
         #     pass
+
+def select_target2(buffered, raw, global_goal):
+#fuck i need a grid that shows unoccupied cells as 0 but the obstacles must be expanded as well. i have buffered that shows every occupied 
+#cell as True, and i have the original occupancy grid unexpanded that shows the free cells as 0. those cells that are 0 and not a buffer are free
+#known cells
+    free = ~buffered
+    known = (raw==0)
+    free_known = free & known
+    gi, gj = global_goal
+    #convert global goal world coordinates into grid coords
+    gi, gj = world_to_grid(gi,gj,origin,occupancy_grid_resolution)
+    fi, fj = np.nonzero(free_known)
+    d = np.hypot(gi-fi,gj-fj)
+    k = np.argmin(d)
+    target = (fi[k],fj[k]) #the goal A* plans a path towards
+    return target
+
+    
+
+
+
 
 def select_target(frontier,global_goal):
     gi, gj = global_goal
@@ -304,7 +342,7 @@ def halfway_reached(path, robot_cell):
 def frontier_cells(buffered,raw):
     #this helper creates an array that contains the coordinates of all the frontier cells in our occupancy grid
     original = (raw == 0)
-    free = ~buffered & original #all cells that are free and safe to travel to are 1 in free
+    free = ~buffered & original #all cells that are free and safe to travel to are True in free
 
     #now create an array that holds only the unknown cells and then make their 8-connected neighbours also unknown so later we can & with the free cells to get frontier cells
     unknown = (raw == -1)
