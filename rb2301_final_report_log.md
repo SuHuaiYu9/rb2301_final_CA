@@ -56,6 +56,7 @@ One entry per decision or mistake. Fill in **Observed** and **Fix** when you fin
 
 ## D5: Obstacle buffer calculated from the robot's size (2026-11-03)
 - **Decision:** buffer radius = `round((robot_length / 2) / occupancy_grid_resolution)`, with `robot_length = 0.3` m. That's `round(7.5)` = 8 cells (0.16 m), replacing the 9 cells tried in M1. `robot_width = 0.2` m is defined but not used.
+- **Later (real robot, 2026-11-03):** `robot_length` changed to 0.2 m, so 5 cells (0.10 m). See R1.
 - **Why:** (not recorded)
 - **Observed:**
 - **Fix:**
@@ -64,6 +65,24 @@ One entry per decision or mistake. Fill in **Observed** and **Fix** when you fin
 - **Decision:** `lookahead_distance` changed from 0.3 to 0.05. `goal_tolerance` is also 0.05.
 - **Why:** (not recorded)
 - **Observed:**
+- **Fix:**
+
+## R1: First runs on the real robot (2026-11-03)
+- **Setup:**
+  - Real course is about 3 m × 3 m, with the same general shape as the Gazebo course. Coordinates are measured in the CA2 maze frame with `./fp.sh --calibrate`.
+  - `origin = (-1.5, -1.5)`, so the 301 × 301 grid covers x and y from −1.5 to 4.52 m.
+  - `global_goal = (0.102, 0.758)`, the measured goal.
+  - Start pose at the start corner: maze (2.82, 2.94), heading **+96.3°**.
+  - LiDAR offset 0.045 m: the LiDAR is 4.5 cm ahead of the robot's centre, assuming the Optitrack pose point is the centre.
+  - The real LiDAR sends 720 readings, which become 360 after the template's `[::2]`, so the angle per reading is `2π / len(scan)`.
+- **LiDAR direction check:** box in front of the robot and to its left. The direction was correct, so the LiDAR is not the cause.
+- **Observed:**
+  - The robot moves haphazardly for a short while after starting.
+  - It soon stops, the terminal prints "no path found bro", and it stays stopped.
+- **Tried:** `robot_length` from 0.3 to 0.2 (buffer from 8 to 5 cells, 0.16 m to 0.10 m). Same problem.
+- **Possibly related (not yet confirmed on the real robot):**
+  - D2: the start heading is +96.3°, not the 0° the velocity commands assume.
+  - M2: the robot's own cell ending up inside the buffer, so A* can't take a step and no path is ever found again.
 - **Fix:**
 
 ## E1: `select_target` crashes when there are no frontier cells
