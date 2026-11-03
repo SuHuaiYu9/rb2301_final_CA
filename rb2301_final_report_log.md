@@ -34,8 +34,16 @@ One entry per decision or mistake. Fill in **Observed** and **Fix** when you fin
   - The 2 cm gained by going from 8 to 9 cells is small compared with the corner cutting (up to about 11.5 cm) and the growth from stale paths.
 - **Fix:**
 
+## M2: "no path found bro" even though a feasible path clearly exists (2026-11-03)
+- **Observed (Gazebo):** many runs print "no path found bro", even though there is clearly a route through the course.
+- **Why (investigated with the same code, buffer 9, in a 2D test across 8 layouts; same pattern in all 7 that didn't crash):**
+  1. **The robot's own cell is inside the buffer.** At the first "no path", the robot's cell was within 0.18 m of an occupied cell, with 0 of its 8 neighbours free. A* only steps into unblocked cells, so it can't leave the start cell and returns `[]` immediately. The target itself was not in the buffer. The robot gets that close for the reasons in M1 (cutting across bends, obstacles filling into the map as it approaches).
+  2. **It never recovers.** With no path, the robot is sent zero velocity, so it stays inside the buffer. The bottom `if not self.path:` block reruns A* every tick from the same start cell and fails every time. The halfway branch, the only place a new target is chosen, needs a non-empty path, so it never runs again. In the test this lasted the rest of the run: 1,300–1,700 ticks in a row (about 65–85 s).
+  3. **Two errors on the first tick:** the halfway replan fails, then the bottom block immediately retries A* with the same inputs.
+- **Fix:**
+
 ## E1: `select_target` crashes when there are no frontier cells
-- **Observed (2D test, 1 of 11 layouts):** `ValueError: attempt to get argmin of an empty sequence` from `np.argmin(d)` in `select_target`, raised inside `timer_callback`.
+- **Observed (2D tests):** `ValueError: attempt to get argmin of an empty sequence` from `np.argmin(d)` in `select_target`, raised inside `timer_callback`. Seen in 1 of 11 layouts, and again in 1 of 8 in the M2 test.
 - **Fix:**
 
 ---
