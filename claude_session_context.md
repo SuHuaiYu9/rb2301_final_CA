@@ -3,6 +3,31 @@
 Saved 2026-11-03 so work can continue seamlessly after context compaction. This lives on branch
 `claude/final-project-review-3m8r3v` only. The user's own code is on `main`, which Claude must never change.
 
+## 0. First steps after a context reset
+1. **Read this whole file, then the report log** `/home/user/rb2301_final_CA/rb2301_final_report_log.md`, so you know every logged entry.
+2. **Bring the clone of the user's code up to date:**
+   ```bash
+   SP=/tmp/claude-0/-home-user-rb2301-final-CA/be22f863-093c-51e5-b646-f1aab5ca3d5f/scratchpad
+   cd "$SP/user_repo" && git fetch -q --depth 10 origin main && git checkout -q FETCH_HEAD && git log --oneline -3
+   ```
+   If the scratchpad is gone (environment reset): `git clone --depth 10 https://github.com/SuHuaiYu9/rb2301_final_CA.git "$SP/user_repo"`.
+   If the 2D simulator and harness in `/tmp/fp_work` and `$SP/harness` are gone, they can't be recovered. Say so, and rebuild them only if an investigation needs them.
+3. **Re-read section 1 (ground rules)** before answering. The most common way to upset this user is giving advice they didn't ask for.
+4. **Continue from section 2, "Last thing discussed".**
+
+## 0b. How to update the report log (whenever the user says "log this")
+- **File:** `/home/user/rb2301_final_CA/rb2301_final_report_log.md`, on branch `claude/final-project-review-3m8r3v`.
+- **Entry types:**
+  - `D#` = a decision the user made;
+  - `M#` = a problem or mistake observed;
+  - `R#` = a real-robot run;
+  - `E#` = an error or crash.
+  Next free numbers: **D9, M4, R2, E2**.
+- **Fields:** Decision/Observed, Why, Potential errors (only if they ask), Observed, Fix. Leave Fix blank unless they say what they did. Add a "Later:" line to an older entry when a value changes, as with D5.
+- **Record the user's own remarks for the report faithfully,** as with R1's "Remark for the report".
+- **Commit and push:** `git add rb2301_final_report_log.md && git commit -m "Log ..."` with the Co-Authored-By and Claude-Session trailer lines, then `git push origin claude/final-project-review-3m8r3v`. Push access works.
+- **Also offer to log** things that are clearly report-worthy, but only offer; don't log without being asked. Currently offered and unanswered: the no-path investigation results (section 5), and the user's revert to "99 stays 99" (D8 is now undone locally).
+
 ---
 
 ## 1. Ground rules from the user (follow strictly)
@@ -25,6 +50,12 @@ Saved 2026-11-03 so work can continue seamlessly after context compaction. This 
 - **Still unhandled:** E1, where `select_target` and `select_target2` crash with `ValueError` from `np.argmin` on an empty array when there are no candidate cells.
 - **Real robot:** currently no access. First runs: haphazard motion, then permanent "no path" (log R1).
 - **Offered but not answered:** add the no-path investigation results (section 5) to D8/M2 in the log, and log the revert to "99 stays 99".
+- **The user's yardstick right now:** the swinging obstacles stay in every Gazebo run, but no dynamic-obstacle logic exists yet, so **success = reaching the door nicely**. Don't judge runs by whether they reach the final goal.
+- **Last thing discussed (end of 2026-11-03):**
+  - The user asked for the best fix for M3 and is leaning towards 1 cm cells.
+  - Claude answered: 1 cm alone at the same 0.12 m buffer gains only 1–2 cm. 1 cm with 11 cells reaches 0.23–0.24 m but has zero margin. Claude suggested 1 cm plus clearing turned back on, and gave the `self.grid_n = int(round(6.02 / res))` change (use it in `np.full` and the four `301` bounds checks).
+  - Expect the user to come back with results of the 1 cm grid, or to start on dynamic obstacles.
+- **About the user:** casual and blunt (swears), learns by doing. Sometimes sends code as screenshots, sometimes pushes to `main` and says "check it". If they say "check" without attaching code, look on GitHub `main`.
 
 ## 3. User's current algorithm (`src/rb2301_fp/rb2301_fp/obstacle_course.py` on `main`)
 - **Settings** in `__init__` by `is_simulation`: `self.origin`, `self.global_goal`, `self.robot_length`, `self.robot_width`, `self.lookahead_distance`, `self.pursuit_speed`, `self.goal_tolerance`, `self.occupancy_grid_resolution`.
