@@ -67,6 +67,24 @@ One entry per decision or mistake. Fill in **Observed** and **Fix** when you fin
 - **Observed:**
 - **Fix:**
 
+## D7: Plan and follow from the robot's centre, not the pose point (Gazebo) (2026-11-03)
+- **Decision:** in the simulation branch, compute the robot's centre, which is 0.0725 m ahead of the pose point along the heading:
+  ```python
+  cx = self.pose[0] + 0.0725 * np.cos(heading)
+  cy = self.pose[1] + 0.0725 * np.sin(heading)
+  ```
+  Use `(cx, cy)` instead of `self.pose` for A*'s start cell and in `pure_pursuit`. The LiDAR position is still calculated from `self.pose`. The real-robot branch is unchanged so far: the offset between the real robot's pose point and its centre still needs finding.
+- **Why:** after replanning every other tick and the 0.05 m lookahead, the remaining contacts in a 2D test were all at the robot's front, while it was right on its path. In Gazebo the pose point is near the back of the robot: the body reaches 0.18 m ahead of it but only 0.035 m behind. The buffer is centred on whatever point is planned for, so the front stuck out past it.
+- **Also changed (simulation settings):** `robot_length` 0.22 m and `robot_width` 0.21 m. That gives a buffer of `round(5.5)` = 6 cells (0.12 m). Measured from the centre, the Gazebo robot reaches about 0.11 m in each direction.
+- **Observed (Gazebo):** avoids obstacles much better.
+- **Fix:**
+
+## D8: LiDAR scans can now turn occupied cells back to free (Gazebo) (2026-11-03)
+- **Decision:** removed the rule that kept a cell at 99 once it was marked occupied (`if self.occupancy_grid[i,j] != 99:`). Any cell a LiDAR ray passes through is now set to free (0), so the map trusts the latest scan. Simulation branch only: the real-robot branch still keeps 99 cells as 99.
+- **Why:** suspected to be causing the very frequent "no path found bro", without being sure of the mechanism at the time.
+- **Observed (Gazebo):** far fewer "no path found bro" messages.
+- **Fix:**
+
 ## R1: First runs on the real robot (2026-11-03)
 - **Setup:**
   - Real course is about 3 m × 3 m, with the same general shape as the Gazebo course. Coordinates are measured in the CA2 maze frame with `./fp.sh --calibrate`.
