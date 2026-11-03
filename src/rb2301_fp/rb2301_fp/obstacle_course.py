@@ -19,6 +19,10 @@ set_logger_level("obstaclecourse", level=LoggingSeverity.INFO) # Configure to ei
 occupancy_grid_resolution = 0.02
 origin = (-0.61, -5.41)
 global_goal = (5.1,-2.6) #for sim
+lookahead_distance = 0.3
+pursuit_speed = 0.3 #can tune based on curvature of lookahead arc
+goal_tolerance = 0.05
+
 
 _PACKAGE_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -207,7 +211,7 @@ class ObstacleCourseNode(Node):
         
         if self.is_simulation: #for sim city 4
         #use lidar scan to update the occupancy grid map
-            if self.last_scan == None:
+            if self.last_scan is None:
                 return
             #use bresenham to register free cells first:0, then whatever coordaintes the lidar scan returns, convert it to grid cells,
             #then update them as occupied cells: 99
@@ -267,6 +271,13 @@ class ObstacleCourseNode(Node):
             
             #i think now i have an A* path that is replanned whenever half the previous plan has finished
             #now i need the pid controller
+
+            if self.path:
+                vx, vy = pure_pursuit(self.path, self.pose[0], self.pose[1], origin)
+                self.move_2D(vx, vy, 0.0)      # no heading control, just strafing it up
+            else:
+                self.move_2D(0.0, 0.0, 0.0)    # no path to follow
+
 
 
 
@@ -398,6 +409,22 @@ def A_star(map_array, startcell, goalcell):
                     parent_j[ni][nj] = j
                     heapq.heappush(open_list, (new_g + calculate_h(neighbour, goalcell), ni, nj))
     return []
+
+def pure_pursuit(path, x, y, origin, resolution=occupancy_grid_resolution,
+                 lookahead=lookahead_distance, speed=pursuit_speed):
+    
+    pts = np.array(path, dtype=float)                       # grid (i, j) of every path cell
+    wx = origin[0] + (pts[:, 0] + 0.5) * resolution         # world x of cell center
+    wy = origin[1] + (pts[:, 1] + 0.5) * resolution         # world y of cell centre
+    d = np.hypot(wx - x, wy - y)                            # distance from the robot to every path point
+    k = int(np.argmin(d))                                   # index of the closest path point
+    ahead = np.nonzero(d[k:] >= lookahead)[0]               # path points from k onwards that are at least `lookahead` away
+    t = k + int(ahead[0]) if ahead.size else len(path) - 1  # first of those, or the last point if none is that far
+    dx, dy = wx[t] - x, wy[t] - y
+    dist = math.hypot(dx, dy)
+    if t == len(path) - 1 and dist < goal_tolerance:
+        return 0.0, 0.0                                     # reached the end of the path
+    return speed * dx / dist, speed * dy / dist             # returns speed, pointed at target
         
         
 
