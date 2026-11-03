@@ -83,6 +83,7 @@ One entry per decision or mistake. Fill in **Observed** and **Fix** when you fin
 - **Possibly related (not yet confirmed on the real robot):**
   - D2: the start heading is +96.3°, not the 0° the velocity commands assume.
   - M2: the robot's own cell ending up inside the buffer, so A* can't take a step and no path is ever found again.
+- **Remark for the report:** a potential error that was noticed in Gazebo but ignored because simulation conditions are ideal is likely to become a real error on the robot. Point out the connection between D1/D2 and M2 with R1.
 - **Fix:**
 
 ## E1: `select_target` crashes when there are no frontier cells
