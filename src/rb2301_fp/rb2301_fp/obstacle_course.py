@@ -104,11 +104,13 @@ class ObstacleCourseNode(Node):
             self.origin = (-0.5, -3.3) #this anchors the occupancy grid, its alw the "bottom left" corner of the occupancy grid
             self.global_goal = (4.7,-3.5) 
             self.robot_length = 0.22
-            self.robot_width = 0.21
+            self.robot_width = 0.24
             self.lookahead_distance = 0.05
             self.pursuit_speed = 0.3 #can tune based on curvature of lookahead arc
             self.goal_tolerance = 0.05
             self.occupancy_grid_resolution = 0.01
+            self.door_x = 3.4
+            self.reached_right_wall = False
 
         else:
             self.origin = (-1.5, -1.5) #must figure out where the lowest x and lowest y of maze frame is, this will be the origin
@@ -119,6 +121,7 @@ class ObstacleCourseNode(Node):
             self.pursuit_speed = 0.3 #can tune based on curvature of lookahead arc
             self.goal_tolerance = 0.05
             self.occupancy_grid_resolution = 0.005
+            self.door_x = None
 
         
         
@@ -164,6 +167,8 @@ class ObstacleCourseNode(Node):
         self.target = None
         self.last_scan = None
         self.counter = 0
+
+        self.passed_door = False
 
         
 
@@ -274,37 +279,59 @@ class ObstacleCourseNode(Node):
             #now we done with building the occupancy grid
             occ = (self.occupancy_grid == 99)                     # rebuild from the raw grid every time
             #should the below 3 arrays be variables or object attributes? for eg: self.buffered instead
-            buffered = inflate_square(occ, round((self.robot_length/2)/self.occupancy_grid_resolution))      # 8 cells x 2 cm = 0.16 m, buffered is the grid to use for traversal
+            buffered = inflate_square(occ, round((self.robot_length/2)/self.occupancy_grid_resolution),round((self.robot_width/2)/self.occupancy_grid_resolution))      # 8 cells x 2 cm = 0.16 m, buffered is the grid to use for traversal
             frontier = frontier_cells(buffered, self.occupancy_grid)
             
 
             #what if we replan A* on every other callback?
+            if self.passed_door:
+                distance_to_goal = np.hypot(self.global_goal[0]-cx,self.global_goal[1]-cy)
+                if distance_to_goal<=self.goal_tolerance:
+                    self.move_2D(0,0,0)
+                    print("reached goal yay")
 
-            if self.counter%2:
-                if cx>=2.9:
-                    print("passed door")
-                    self.target = select_target2(buffered,self.occupancy_grid,self.global_goal,self.occupancy_grid_resolution,
-                                                 self.origin)
-                    self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
-                                (self.target[0], self.target[1]))
-                    if not self.path:
-                        self.get_logger().info('no path found bro')
+                #go for the right wall straight until 2cm away
+                if self.last_scan[270]>=0.15 and False:
+                    self.move_2D(0,-0.5,0)
                 else:
-                    self.target = select_target(frontier, self.global_goal,self.origin,self.occupancy_grid_resolution)
-                    self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
-                                (self.target[0], self.target[1]))
-                    if not self.path:
-                        self.get_logger().info('no path found bro')
-            
-            #now i have an A* path that is replanned whenever half the previous plan has finished
-            #now i need the pid controller
+                    front_left_quadrant = self.last_scan[:91]
+                    front_right_quadrant = self.last_scan[270:]
+                    min_distance = 0.25
+                    if np.all(front_left_quadrant>min_distance) and np.all(front_right_quadrant>min_distance):
+                        self.move_2D(0.5,0,0)
+                    else:
+                        print("something blocking front left n front right")
+                        self.move_2D(0,0,0)
 
-            if self.path:
-                vx, vy = pure_pursuit(self.path, cx, cy, self.origin,self.occupancy_grid_resolution,
-                                      self.lookahead_distance,self.pursuit_speed,self.goal_tolerance)
-                self.move_2D(vx, vy, 0.0)      # no heading control, just strafing it up
             else:
-                self.move_2D(0.0, 0.0, 0.0)    # no path to follow
+                if self.counter%2:
+                    if cx>=self.door_x: #will this change in the real course??????????
+                        print(f"passed door,{self.pose[0]}")
+                        self.passed_door = True
+                        self.target = select_target2(buffered,self.occupancy_grid,self.global_goal,self.occupancy_grid_resolution,
+                                                    self.origin)
+                        self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
+                                    (self.target[0], self.target[1]))
+                        if not self.path:
+                            self.get_logger().info('no path found bro')
+                    else:
+                        # self.target = select_target(frontier, self.global_goal,self.origin,self.occupancy_grid_resolution)
+                        self.target = select_target2(buffered,self.occupancy_grid,self.global_goal,self.occupancy_grid_resolution,
+                                                     self.origin)
+                        self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
+                                    (self.target[0], self.target[1]))
+                        if not self.path:
+                            self.get_logger().info('no path found bro')
+                
+                #now i have an A* path that is replanned whenever half the previous plan has finished
+                #now i need the pid controller
+
+                if self.path:
+                    vx, vy = pure_pursuit(self.path, cx, cy, self.origin,self.occupancy_grid_resolution,
+                                        self.lookahead_distance,self.pursuit_speed,self.goal_tolerance)
+                    self.move_2D(vx, vy, 0.0)      # no heading control, just strafing it up
+                else:
+                    self.move_2D(0.0, 0.0, 0.0)    # no path to follow
 
 
 
@@ -343,7 +370,7 @@ class ObstacleCourseNode(Node):
             #now we done with building the occupancy grid
             occ = (self.occupancy_grid == 99)                     # rebuild from the raw grid every time
             #should the below 3 arrays be variables or object attributes? for eg: self.buffered instead
-            buffered = inflate_square(occ, round((self.robot_length/2)/self.occupancy_grid_resolution))      # 8 cells x 2 cm = 0.16 m, buffered is the grid to use for traversal
+            buffered = inflate_square(occ, round((self.robot_length/2)/self.occupancy_grid_resolution),round((self.robot_width/2)/self.occupancy_grid_resolution))      # 8 cells x 2 cm = 0.16 m, buffered is the grid to use for traversal
             frontier = frontier_cells(buffered, self.occupancy_grid)
             #what if we replan A* on every other callback?
             if self.counter%2:
@@ -369,7 +396,7 @@ class ObstacleCourseNode(Node):
             #now i need the pid controller
             
             if self.path:
-                vx, vy = pure_pursuit(self.path, self.pose[0], self.pose[1], self.origin,self.occupancy_grid_resolution,self.lookahead_distance,
+                vx, vy = pure_pursuit(self.path, cx, cy, self.origin,self.occupancy_grid_resolution,self.lookahead_distance,
                                       self.pursuit_speed,self.goal_tolerance)
                 self.move_2D(vx, vy, 0.0)      # no heading control, just strafing it up
             else:
@@ -433,14 +460,14 @@ def frontier_cells(buffered,raw):
     frontier = output & free
     return frontier
 
-def inflate_square(occ, r):
+def inflate_square(occ, length,width):
     '''occ: bool array, True = occupied. Returns occ grown by r cells in every direction (a square).'''
     out = occ.copy()
-    for k in range(1, r + 1):          # pass 1: grow along axis 0
+    for k in range(1, length + 1):          # pass 1: grow along axis 0
         out[k:, :]  |= occ[:-k, :]     #   copy shifted down by k
         out[:-k, :] |= occ[k:, :]      #   copy shifted up by k
     tmp = out.copy()
-    for k in range(1, r + 1):          # pass 2: grow that result along axis 1
+    for k in range(1, width + 1):          # pass 2: grow that result along axis 1
         out[:, k:]  |= tmp[:, :-k]
         out[:, :-k] |= tmp[:, k:]
     return out
