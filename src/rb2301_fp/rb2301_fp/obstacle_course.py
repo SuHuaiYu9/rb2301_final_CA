@@ -101,24 +101,24 @@ class ObstacleCourseNode(Node):
         self.lidar_rays = 0
 
         if self.is_simulation:
-            self.origin = (-0.61, -5.41)
-            self.global_goal = (5.1,-2.6) 
+            self.origin = (-0.5, -3.3) #this anchors the occupancy grid, its alw the "bottom left" corner of the occupancy grid
+            self.global_goal = (4.7,-3.5) 
             self.robot_length = 0.22
             self.robot_width = 0.21
             self.lookahead_distance = 0.05
             self.pursuit_speed = 0.3 #can tune based on curvature of lookahead arc
             self.goal_tolerance = 0.05
-            self.occupancy_grid_resolution = 0.02
+            self.occupancy_grid_resolution = 0.01
 
         else:
-            self.origin = (-1.5, -1.5)
-            self.global_goal = (0.102, 0.758)
+            self.origin = (-1.5, -1.5) #must figure out where the lowest x and lowest y of maze frame is, this will be the origin
+            self.global_goal = (0.102, 0.758) #must figure out where the global goal is in maze frame
             self.robot_length = 0.3
             self.robot_width = 0.2
             self.lookahead_distance = 0.05
             self.pursuit_speed = 0.3 #can tune based on curvature of lookahead arc
             self.goal_tolerance = 0.05
-            self.occupancy_grid_resolution = 0.02
+            self.occupancy_grid_resolution = 0.005
 
         
         
@@ -153,7 +153,12 @@ class ObstacleCourseNode(Node):
 
         self.pose = None
 
-        self.occupancy_grid = np.full((301,301),-1,dtype = np.int8) #-1 represents unexplored. we initialise the occupancy grid with all cells unexplored
+        self.map_size_x = 6.02                                                    # metres the grid must cover in x direction
+        self.grid_n_x = int(round(self.map_size_x / self.occupancy_grid_resolution))  # 301 cells in x-direction at 2 cm, 602 at 1 cm
+        self.map_size_y = 4.5                                                     # metres the grid must cover in x direction
+        self.grid_n_y = int(round(self.map_size_y / self.occupancy_grid_resolution))
+        self.occupancy_grid = np.full((self.grid_n_x, self.grid_n_y), -1, dtype=np.int8) #-1 represents unexplored. we initialise the occupancy grid with all cells unexplored
+        # self.occupancy_grid = np.full((301,301),-1,dtype = np.int8) 
         self.path = None
         self.started = False
         self.target = None
@@ -231,6 +236,10 @@ class ObstacleCourseNode(Node):
         # self.move_2D(0.5,0,0)
         ###### INSERT CODE HERE ######
         self.counter+=1
+        #test pose
+        # if True:
+        #     print(self.pose[0],self.pose[1])
+        #     return
         
         if self.is_simulation: #for sim city 4
         #use lidar scan to update the occupancy grid map
@@ -257,10 +266,10 @@ class ObstacleCourseNode(Node):
 
                 cells = bresenham(li, lj, hi, hj)
                 for (i, j) in cells[:-1]:                            # everything before the hit: free
-                    if 0 <= i < 301 and 0 <= j < 301:
-                        #if self.occupancy_grid[i,j] != 99: what if i comment out this line so that our robot only trusts the latest lidar?
+                    if 0 <= i < self.grid_n_x and 0 <= j < self.grid_n_y:
+                        #if self.occupancy_grid[i,j] != 99: #what if i comment out this line so that our robot only trusts the latest lidar?
                         self.occupancy_grid[i, j] = 0
-                if 0 <= hi < 301 and 0 <= hj < 301:                  # the hit itself: occupied
+                if 0 <= hi < self.grid_n_x and 0 <= hj < self.grid_n_y:                  # the hit itself: occupied
                     self.occupancy_grid[hi, hj] = 99
             #now we done with building the occupancy grid
             occ = (self.occupancy_grid == 99)                     # rebuild from the raw grid every time
@@ -292,17 +301,22 @@ class ObstacleCourseNode(Node):
             #         self.get_logger().error('no path found bro')
 
             #what if we replan A* on every other callback?
+
             if self.counter%2:
-                self.target = select_target(frontier, self.global_goal,self.origin,self.occupancy_grid_resolution)
-                self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
-                            (self.target[0], self.target[1]))
-                if not self.path:
-                    self.get_logger().info('no path found bro')
-                    self.target = select_target2(buffered,self.occupancy_grid,self.global_goal,self.occupancy_grid_resolution,self.origin)
+                if cx>=2.9:
+                    print("passed door")
+                    self.target = select_target2(buffered,self.occupancy_grid,self.global_goal,self.occupancy_grid_resolution,
+                                                 self.origin)
                     self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
                                 (self.target[0], self.target[1]))
                     if not self.path:
-                        self.get_logger().info('still no path found bro')
+                        self.get_logger().info('no path found bro')
+                else:
+                    self.target = select_target(frontier, self.global_goal,self.origin,self.occupancy_grid_resolution)
+                    self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
+                                (self.target[0], self.target[1]))
+                    if not self.path:
+                        self.get_logger().info('no path found bro')
             
             #now i have an A* path that is replanned whenever half the previous plan has finished
             #now i need the pid controller
