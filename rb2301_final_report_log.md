@@ -57,6 +57,7 @@ One entry per decision or mistake. Fill in **Observed** and **Fix** when you fin
 ## D5: Obstacle buffer calculated from the robot's size (2026-11-03)
 - **Decision:** buffer radius = `round((robot_length / 2) / occupancy_grid_resolution)`, with `robot_length = 0.3` m. That's `round(7.5)` = 8 cells (0.16 m), replacing the 9 cells tried in M1. `robot_width = 0.2` m is defined but not used.
 - **Later (real robot, 2026-11-03):** `robot_length` changed to 0.2 m, so 5 cells (0.10 m). See R1.
+- **Later (2026-11-04):** the buffer now has separate sizes along x and y, from `robot_length` and `robot_width`. See D11.
 - **Why:** (not recorded)
 - **Observed:**
 - **Fix:**
@@ -100,6 +101,7 @@ One entry per decision or mistake. Fill in **Observed** and **Fix** when you fin
   | 1 cm cells, 11-cell buffer (0.11 m; what `robot_length` 0.22 gives at 1 cm) | 0.23–0.24 m | Zero margin over the half-width; 4× as many cells. The grid size must be set in metres: a fixed 301 × 301 grid at 1 cm only covers 3 m, the robot starts outside it, and `select_target` raises a `ValueError` (seen when 1 cm was first tried) |
   | 1 cm cells, 12-cell buffer (0.12 m) | 0.25–0.26 m | Same safety margin as now; only 1–2 cm better |
 - **Planned fix:** try a finer grid (1 cm cells).
+- **Later (2026-11-04):** Gazebo changed to 1 cm cells (real robot 0.5 cm), with the grid size set in metres: `map_size_x` 6.02 m × `map_size_y` 4.5 m. Effect on this gap not recorded.
 - **Fix:**
 
 ## R1: First runs on the real robot (2026-11-03)
@@ -124,6 +126,52 @@ One entry per decision or mistake. Fill in **Observed** and **Fix** when you fin
 ## E1: `select_target` crashes when there are no frontier cells
 - **Observed (2D tests):** `ValueError: attempt to get argmin of an empty sequence` from `np.argmin(d)` in `select_target`, raised inside `timer_callback`. Seen in 1 of 11 layouts, and again in 1 of 8 in the M2 test.
 - **Fix:**
+
+## D9: Every target is now the free cell closest to the goal (2026-11-04)
+- **Decision:** `select_target` (the frontier cell closest to the goal) is no longer used. Every target, before and after the door, comes from `select_target2`: the seen, free cell outside the buffer that is closest to the goal in a straight line. If A* finds no path, the robot logs "no path found bro" and stops; there is no second fallback any more.
+- **Why:** sometimes the robot got through the door gap, but before its centre passed the x threshold for "passed the door", it saw the swinging obstacles. The frontier cell closest to the goal then switched to a cell behind it.
+- **Tested before the change (2D, 8 layouts, swinging obstacles on, success = reaching the door):**
+  - frontier targets reached the door in 4 of 8 layouts; closest-free-cell targets in 6 of 8;
+  - in 6 layouts the two versions behaved identically or almost identically;
+  - in the other 2, the frontier version stopped next to a target by a wall and stayed there.
+- **Observed (Gazebo):** part of the first full run of the course (S1).
+- **Fix:**
+
+## D10: After the door: drive straight ahead, and stop and wait while anything is within 0.25 m in front (Gazebo) (2026-11-04)
+- **Decision:**
+  - "Passed the door" means the robot's centre has `cx >= self.door_x`, hard-coded as 3.4 in Gazebo (previously 2.9). It's checked on planning ticks; once true, `self.passed_door` stays true.
+  - After that, A* and pure pursuit are no longer used. Every tick:
+    - if the centre is within `goal_tolerance` of the goal, stop;
+    - if every LiDAR reading in the front-left quarter (indices 0–90) and the front-right quarter (indices 270–359) is more than 0.25 m, drive straight forward with `move_2D(0.5, 0, 0)`;
+    - otherwise, stop and wait until the swinging obstacle has gone past.
+  - A first move to the right (−y) until the right-hand wall is close is written but switched off (`and False`).
+- **Why:**
+  - The robot only moves forward when nothing is close in front of it, so a swinging obstacle can't hit it while it moves.
+  - 0.25 m was calculated to give the robot enough clearance from the swinging obstacles. The previous plan used 0.22 m, the front-left quarter only and a move to the right-hand wall first; 0.22 m was worked out from the obstacles' simulated speed and the robot's length.
+- **Earlier idea, dropped:** compare consecutive occupancy grids to find which obstacle cells moved, matching freed cells to newly occupied neighbours (nearest neighbour), using the obstacles' known size. A 2D test (4 layouts, 1 cm cells) showed:
+  - **It works while the robot stands still:** about 1 wall cell changes per scan, against 10–13 obstacle cells.
+  - **While the robot moves,** 200–280 wall cells change per scan, against 33–46 obstacle cells.
+  - **The neighbour matching doesn't fit this motion.** Each box slides along its own 0.3 m face, so the freed cells and the newly occupied cells end up about 0.3 m apart, not next to each other.
+- **Observed (Gazebo):** "works perfectly". This gave the first full run of the course (S1).
+- **Code check (2026-11-04):** at the goal, the stop is overridden in the same tick by the forward command (`(0, 0)` then `(0.5, 0)` are published), so the robot doesn't stop at the goal. Suggested fix: `return` after stopping.
+- **Fix:**
+
+## D11: Separate buffer sizes along x and y (2026-11-04)
+- **Decision:** `inflate_square(occ, length, width)` grows obstacles by `length` cells along x and `width` cells along y, where `length = round((robot_length / 2) / res)` and `width = round((robot_width / 2) / res)`.
+  - Gazebo: `robot_width` changed from 0.21 to 0.24 m. With 1 cm cells, the buffer is 11 cells (0.11 m) along x and 12 cells (0.12 m) along y.
+  - Real robot: 30 × 20 cells at 0.5 cm.
+- **Why:** (not recorded)
+- **Observed:**
+- **Fix:**
+
+## S1: First full run of the course in Gazebo (2026-11-04)
+- **Code:** commit `676268b`, "added dynamic obstacle avoidance logic and made inflate_square logic independent for width and length".
+- **Setup (Gazebo, swinging obstacles on):**
+  - 1 cm cells; grid 6.02 × 4.5 m from origin (−0.5, −3.3); goal (4.7, −3.5);
+  - scans can clear occupied cells (D8); planning and following from the robot's centre (D7);
+  - every target from `select_target2` (D9); stop-and-wait after the door (D10); buffer 11 × 12 cells (D11).
+- **Result:** the robot ran the whole course: past the static obstacles, through the door, and past the swinging obstacles.
+- **Remark from the user:** "this marks our actual first success of the robot running the full course in sim".
 
 ---
 

@@ -1,6 +1,6 @@
 # Claude session context: RB2301 final project (read this first after a context reset)
 
-Saved 2026-11-03 so work can continue seamlessly after context compaction. This lives on branch
+Saved 2026-11-03, updated 2026-11-04, so work can continue seamlessly after context compaction. This lives on branch
 `claude/final-project-review-3m8r3v` only. The user's own code is on `main`, which Claude must never change.
 
 ## 0. First steps after a context reset
@@ -21,12 +21,13 @@ Saved 2026-11-03 so work can continue seamlessly after context compaction. This 
   - `D#` = a decision the user made;
   - `M#` = a problem or mistake observed;
   - `R#` = a real-robot run;
-  - `E#` = an error or crash.
-  Next free numbers: **D9, M4, R2, E2**.
+  - `E#` = an error or crash;
+  - `S#` = a milestone or success.
+  Next free numbers: **D12, M4, R2, E2, S2**.
 - **Fields:** Decision/Observed, Why, Potential errors (only if they ask), Observed, Fix. Leave Fix blank unless they say what they did. Add a "Later:" line to an older entry when a value changes, as with D5.
 - **Record the user's own remarks for the report faithfully,** as with R1's "Remark for the report".
 - **Commit and push:** `git add rb2301_final_report_log.md && git commit -m "Log ..."` with the Co-Authored-By and Claude-Session trailer lines, then `git push origin claude/final-project-review-3m8r3v`. Push access works.
-- **Also offer to log** things that are clearly report-worthy, but only offer; don't log without being asked. Currently offered and unanswered: the no-path investigation results (section 5), and the user's revert to "99 stays 99" (D8 is now undone locally).
+- **Also offer to log** things that are clearly report-worthy, but only offer; don't log without being asked. Currently offered and unanswered: the no-path investigation results (section 5).
 
 ---
 
@@ -43,44 +44,59 @@ Saved 2026-11-03 so work can continue seamlessly after context compaction. This 
 10. **Answer "why" questions with evidence:** use the 2D simulator harness and real measurements, not guesses. Say when something is unverified.
 11. **Git:** commit messages end with the session's Co-Authored-By and Claude-Session lines. Push to `claude/final-project-review-3m8r3v` (push works now; GitHub was connected mid-session). A stop hook demands that uncommitted or untracked files in `/home/user/rb2301_final_CA` be committed and pushed.
 
-## 2. Status right now
-- **In Gazebo, the user's planner reaches the door reliably,** robust to adversarial static obstacles. That works both with obstacle-clearing (D8) and with "99 stays 99". The user has since **reverted to 99 stays 99 locally**; unknown whether that's pushed. The last commit checked was `b32aa8a`, which has clearing in the sim branch.
-- **Open issue M3:** the robot won't use a gap that is physically wide enough. The user is considering **1 cm cells** as the fix. Claude gave the trade-offs: see M3 in the log and section 5.
-- **Next big task (not started):** logic for the dynamic swinging obstacles, past the door. The user designs it; Claude translates.
-- **Still unhandled:** E1, where `select_target` and `select_target2` crash with `ValueError` from `np.argmin` on an empty array when there are no candidate cells.
-- **Real robot:** currently no access. First runs: haphazard motion, then permanent "no path" (log R1).
-- **Offered but not answered:** add the no-path investigation results (section 5) to D8/M2 in the log, and log the revert to "99 stays 99".
-- **The user's yardstick right now:** the swinging obstacles stay in every Gazebo run, but no dynamic-obstacle logic exists yet, so **success = reaching the door nicely**. Don't judge runs by whether they reach the final goal.
-- **Last thing discussed (end of 2026-11-03):**
-  - The user asked for the best fix for M3 and is leaning towards 1 cm cells.
-  - Claude answered: 1 cm alone at the same 0.12 m buffer gains only 1–2 cm. 1 cm with 11 cells reaches 0.23–0.24 m but has zero margin. Claude suggested 1 cm plus clearing turned back on, and gave the `self.grid_n = int(round(6.02 / res))` change (use it in `np.full` and the four `301` bounds checks).
-  - Expect the user to come back with results of the 1 cm grid, or to start on dynamic obstacles.
+## 2. Status right now (updated 2026-11-04)
+- **Milestone S1:** in Gazebo, the robot ran the whole course for the first time (commit `676268b`), with the swinging obstacles on. Logged as D9, D10, D11 and S1.
+- **Known code bug (reported, the user hasn't fixed it yet):** in the after-door branch, the stop at the goal is overridden in the same tick by `move_2D(0.5, 0, 0)`. Suggested fix: `return` after stopping.
+- **Still unhandled:** E1. `select_target2` (now used for every Gazebo target) raises `ValueError` from `np.argmin` when there's no free, seen cell outside the buffer.
+- **Real robot:** no access at the moment.
+  - The real `self.origin` and `self.global_goal` are **placeholders** (the user said so). The real door threshold is still unknown; the user's comment asks whether it changes on the real course.
+  - The real branch uses 0.5 cm cells and the shared 6.02 × 4.5 m size, so with origin (−1.5, −1.5) the grid only reaches y = 3.0.
+  - At the measured start (2.82, 2.94, 96.3°), the centre `cy` = 3.012 is outside the grid, so A* raises `IndexError` on tick 1. Reported; whether it happens depends on the final numbers.
+  - Tick time at 0.5 cm is roughly 240–310 ms median (rough measurement).
+  - The real branch has no after-door stop-and-wait logic yet (see section 3).
+- **M3 (gap too narrow):** the user moved to 1 cm cells. The effect on the gap isn't recorded.
+- **Dynamic obstacles:** handled in Gazebo by D10 (stop and wait). The user's first idea, comparing grids, got an evidence-based critique (logged under D10) and was dropped.
+- **Critique permission:** the user allowed high-level critique for ONE question ("you are allowed to give high-level logic critique now"). The default rule (section 1) still applies.
+- **Last thing discussed (2026-11-04):** the user asked to log D9–D11 and the milestone; that's done and pushed. Likely next: fixing the goal-stop bug, adapting the real robot (measuring origin/goal/door, porting the after-door logic), or writing the report.
 - **About the user:** casual and blunt (swears), learns by doing. Sometimes sends code as screenshots, sometimes pushes to `main` and says "check it". If they say "check" without attaching code, look on GitHub `main`.
 
-## 3. User's current algorithm (`src/rb2301_fp/rb2301_fp/obstacle_course.py` on `main`)
-- **Settings** in `__init__` by `is_simulation`: `self.origin`, `self.global_goal`, `self.robot_length`, `self.robot_width`, `self.lookahead_distance`, `self.pursuit_speed`, `self.goal_tolerance`, `self.occupancy_grid_resolution`.
+## 3. User's current algorithm (`src/rb2301_fp/rb2301_fp/obstacle_course.py` on `main`, commit `676268b`)
+- **Settings** in `__init__` by `is_simulation`:
 
   | Setting | Gazebo | Real robot |
   |---|---|---|
-  | origin | (−0.61, −5.41) | (−1.5, −1.5) |
-  | goal | (5.1, −2.6) | (0.102, 0.758) |
-  | robot_length × width | 0.22 × 0.21 | 0.3 × 0.2 |
+  | origin | (−0.5, −3.3) | (−1.5, −1.5), placeholder |
+  | goal | (4.7, −3.5) | (0.102, 0.758), placeholder |
+  | robot_length × width | 0.22 × 0.24 | 0.3 × 0.2 |
   | lookahead / speed / tolerance | 0.05 / 0.3 / 0.05 | same |
-  | resolution | 0.02 | 0.02 |
-- **Grid:** `self.occupancy_grid` is int8, **301 × 301 hard-coded**, also in the 4 bounds checks `0 <= i < 301`. −1 = unknown, 0 = free, 99 = occupied.
-- **Mapping:** Bresenham from the LiDAR cell to each hit cell. The cells before the hit are marked free, either always (clearing) or only if not already 99 (99 stays 99). The hit cell is marked 99.
-  - Gazebo: LiDAR at `pose + 0.114` along the heading; `theta = heading + idx * 6.28 / 359`.
-  - Real: LiDAR at `pose + 0.045`; `theta = heading + idx * 2π / len(scan)`.
-- **Buffer:** `inflate_square(occ, round((robot_length / 2) / res))`, a square grown with numpy shifts. Gazebo: `round(5.5)` = 6 cells (0.12 m). Real: 8 cells.
-- **Frontier:** `frontier_cells(buffered, raw)` = (raw == 0 & ~buffered) & (unknown grown by 1 cell, 8-connected).
-- **Targets:**
-  - `select_target(frontier, goal, origin, res)`: the frontier cell nearest the goal by straight-line distance.
-  - `select_target2(buffered, raw, goal, res, origin)`: fallback, the seen-free, non-buffered cell nearest the goal.
-- **Replanning:** every other tick (`self.counter % 2`), pick a new target and run A*. If that fails, log "no path found bro", use `select_target2` and run A* again; if that fails too, log "still no path found bro".
-- **A*:** Python-lists version, 8-connected, diagonal cost 1.414, Euclidean `h`, returns `[]` when there's no path. Gazebo start cell = robot centre `(cx, cy) = pose + 0.0725` along the heading.
-- **`pure_pursuit(path, cx, cy, origin, res, lookahead, speed, tol)`:** returns a world-frame `(vx, vy)`, sent straight to `move_2D(vx, vy, 0.0)`. Zero velocity when there's no path.
-- **Code layout:** separate Gazebo and real-robot branches in `timer_callback`. The real branch has no centre offset and keeps 99 cells as 99.
-- **Leftovers:** `halfway_reached` and `self.started` are no longer used; the old halfway logic is commented out.
+  | resolution | 0.01 | 0.005 |
+  | door_x | 3.4 | None (the real branch still hard-codes 2.9) |
+
+  Gazebo also has `self.reached_right_wall = False`, which is unused.
+- **Grid:** `self.map_size_x = 6.02` and `self.map_size_y = 4.5` are set after the if/else, so both branches share them. `grid_n_x` / `grid_n_y` = `round(size / res)`, and the grid is `np.full((grid_n_x, grid_n_y), -1, int8)`. All bounds checks use `grid_n_x` / `grid_n_y`.
+  - Gazebo: 602 × 450 cells, covering x from −0.5 to 5.52 and y from −3.3 to 1.2.
+  - Real: 1204 × 900 cells.
+- **Origin:** `self.origin` is the lowest-x, lowest-y corner of cell `[0, 0]`. Index `i` is x and `j` is y.
+- **Mapping:** both branches now let scans clear occupied cells (the `!= 99` check is commented out).
+  - Gazebo: LiDAR at `pose + 0.114`; `theta = heading + idx * 6.28 / 359`.
+  - Real: LiDAR at `pose + 0.045`; `theta = heading + idx * 2π / len`.
+- **Centre:** both branches use `cx, cy = pose + 0.0725` along the heading. The real branch copied this from Gazebo.
+- **Buffer:** `inflate_square(occ, round((L / 2) / res), round((W / 2) / res))`, with length along axis 0 (x) and width along axis 1 (y). Gazebo: 11 × 12 cells. Real: 30 × 20 cells.
+- **Gazebo branch flow:**
+  - If `self.passed_door`:
+    1. goal check: stop if within tolerance (no `return`, which is the bug);
+    2. `if self.last_scan[270] >= 0.15 and False:` move right (switched off);
+    3. otherwise: if `last_scan[:91]` and `last_scan[270:]` are all > 0.25, `move_2D(0.5, 0, 0)`; else stop.
+  - Otherwise, on odd counter ticks:
+    - if `cx >= self.door_x`: set `passed_door = True`, then `select_target2` + A*;
+    - else: `select_target2` + A*, logging "no path found bro" on failure;
+    - then `pure_pursuit(path, cx, cy, ...)` → `move_2D(vx, vy, 0)`, or stop if there's no path.
+- **Real branch flow:** on odd counter ticks:
+  - if `cx >= 2.9`: print "passed door", then `select_target2` + A*;
+  - else: `select_target` (frontier) + A*, with the `select_target2` fallback;
+  - then `pure_pursuit(path, cx, cy)`. There's no `passed_door` logic.
+- **Unchanged helpers:** A* (Python lists, 8-connected, diagonal cost 1.414, Euclidean h, returns `[]`), `pure_pursuit`, `select_target2`, `frontier_cells`, `world_to_grid` (floor), `grid_to_world` (+0.5).
+- **A* start cell outside the grid:** past the high edge → `IndexError`; past the low edge → Python wraps the negative index, then returns `[]`.
 
 ## 4. Facts
 **Gazebo world** (`rb2301_gz/worlds/obstacle_course_world_fp_original.sdf`, world name `empty`):
@@ -159,4 +175,12 @@ Saved 2026-11-03 so work can continue seamlessly after context compaction. This 
 - **When deleting:** use `"${VAR:?}"` paths. A safety check blocks `rm -rf $VAR`.
 
 ## 7. Report log (`rb2301_final_report_log.md`, this branch)
-Entries: D1 (no heading control), D2 (world-frame velocity sent straight to `move_2D`), M1 (brushing obstacles), M2 (no path: start cell in buffer), D3 (fallback `select_target2`), D4 (replanning every other tick), D5 (buffer from `robot_length`, plus a later note), D6 (lookahead 0.05), D7 (planning from the robot centre), D8 (clearing occupied cells), M3 (wide-enough gap rejected), R1 (first real-robot runs, plus the user's report remark linking D1/D2 and M2 with R1), E1 (empty-target crash). Most "Fix" fields are blank for the user to fill in.
+Entries:
+- **D1** no heading control; **D2** world-frame velocity sent straight to `move_2D`; **M1** brushing obstacles; **M2** no path because the start cell is in the buffer;
+- **D3** fallback `select_target2`; **D4** replanning every other tick; **D5** buffer from `robot_length` (plus later notes); **D6** lookahead 0.05;
+- **D7** planning from the robot's centre; **D8** clearing occupied cells; **M3** wide-enough gap rejected (plus a later note about 1 cm cells);
+- **R1** first real-robot runs, plus the user's report remark linking D1/D2 and M2 with R1; **E1** empty-target crash;
+- **D9** every target from `select_target2`, with the 2D frontier-vs-free test; **D10** stop and wait after the door, including the dropped grid-differencing idea and the goal-stop bug from the code check;
+- **D11** separate buffer sizes along x and y; **S1** first full run of the course in Gazebo (commit `676268b`), with the user's remark.
+
+Most "Fix" fields are blank for the user to fill in.
