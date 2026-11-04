@@ -278,28 +278,6 @@ class ObstacleCourseNode(Node):
             frontier = frontier_cells(buffered, self.occupancy_grid)
             
 
-
-            '''the below commented code only replans every half the previous path'''
-            # #if A* returns empty list, get logger error(no path found)
-            # #the below lines only triggers on the first time of planning
-            # if not self.started:
-            #     self.target = select_target(frontier, global_goal) #select target based on which frontier cell closest to global goal
-            # elif self.path and halfway_reached(self.path, robot_cell):
-            #     self.target = select_target(frontier, global_goal) #select target based on which frontier cell closest to global goal
-            #     #replan A*, else keep driving along the last planned path to target
-            #     self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],self.origin,self.occupancy_grid_resolution),
-            #                 (self.target[0], self.target[1]))
-            #     if not self.path:
-            #         self.get_logger().error('no path found bro')
-            #     self.started =  True
-
-            # if not self.path:
-            #     self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],self.origin,self.occupancy_grid_resolution),
-            #                 (self.target[0],self.target[1]))
-            #     self.started = True
-            #     if not self.path:
-            #         self.get_logger().error('no path found bro')
-
             #what if we replan A* on every other callback?
 
             if self.counter%2:
@@ -343,6 +321,8 @@ class ObstacleCourseNode(Node):
             #i think need to find out the offset, if any, between the real robot's published pose and its physical center, so robot doesnt scrape shit
             lidar_x = self.pose[0] + 0.045 * np.cos(heading)
             lidar_y = self.pose[1] + 0.045 * np.sin(heading)
+            cx = self.pose[0] + 0.0725 * np.cos(heading)    # robot's center. the published pose is offset from robot's physical center
+            cy = self.pose[1] + 0.0725 * np.sin(heading)
             li, lj = world_to_grid(lidar_x, lidar_y,self.origin,self.occupancy_grid_resolution)                       # start cell: the LiDAR
             
             for scan_idx in range(len(self.last_scan)):
@@ -355,10 +335,10 @@ class ObstacleCourseNode(Node):
             
                 cells = bresenham(li, lj, hi, hj)
                 for (i, j) in cells[:-1]:                            # everything before the hit: free
-                    if 0 <= i < 301 and 0 <= j < 301:
-                        if self.occupancy_grid[i,j] != 99:
-                            self.occupancy_grid[i, j] = 0
-                if 0 <= hi < 301 and 0 <= hj < 301:                  # the hit itself: occupied
+                    if 0 <= i < self.grid_n_x and 0 <= j < self.grid_n_y:
+                        #if self.occupancy_grid[i,j] != 99: 
+                        self.occupancy_grid[i, j] = 0
+                if 0 <= hi < self.grid_n_x and 0 <= hj < self.grid_n_y:                  # the hit itself: occupied
                     self.occupancy_grid[hi, hj] = 99
             #now we done with building the occupancy grid
             occ = (self.occupancy_grid == 99)                     # rebuild from the raw grid every time
@@ -367,16 +347,20 @@ class ObstacleCourseNode(Node):
             frontier = frontier_cells(buffered, self.occupancy_grid)
             #what if we replan A* on every other callback?
             if self.counter%2:
-                self.target = select_target(frontier, self.global_goal,self.origin,self.occupancy_grid_resolution)
-                self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],self.origin,self.occupancy_grid_resolution),
-                            (self.target[0], self.target[1]))
-                if not self.path:
-                    self.get_logger().info('no path found bro')
-                    self.target = select_target2(buffered,self.occupancy_grid,self.global_goal,self.occupancy_grid_resolution,self.origin)
-                    self.path = A_star(buffered,world_to_grid(self.pose[0],self.pose[1],self.origin,self.occupancy_grid_resolution),
+                if cx>=2.9:
+                    print("passed door")
+                    self.target = select_target2(buffered,self.occupancy_grid,self.global_goal,self.occupancy_grid_resolution,
+                                                 self.origin)
+                    self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
                                 (self.target[0], self.target[1]))
                     if not self.path:
-                        self.get_logger().info('still no path found bro')
+                        self.get_logger().info('no path found bro')
+                else:
+                    self.target = select_target(frontier, self.global_goal,self.origin,self.occupancy_grid_resolution)
+                    self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
+                                (self.target[0], self.target[1]))
+                    if not self.path:
+                        self.get_logger().info('no path found bro')
             
             
             
