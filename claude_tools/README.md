@@ -39,6 +39,7 @@ Every script:
 | `target_study.py` | `<code_dir> <sim_dir> <secs> <seed> <frontier\|nearest_free>` | Runs until the robot passes the door, gets stuck (moves under 5 cm in 15 s) or times out. Prints contacts and the last target |
 | `diff_study.py`, `diff_study2.py` | `<code_dir> <sim_dir> <seed>` | Cells that change between consecutive grids, on static walls vs swinging obstacles, with the robot still vs moving |
 | `dyn_freed_study.py` | `<code_dir> <sim_dir> <secs> <seed> <swing\|noswing> [door]` | Version 2: how many cells in the detection window go 99 → 0 at each comparison, with detection switched off. Needs a copy of the code with `window_cells` / `prev_window` / `dynamic_threshold` (the 2026-11-05 snippets). `door` starts the robot just past the door |
+| `dyn_why_study.py` | `<code_dir> <sim_dir> <secs> <seed> <base\|fresh\|still>` | Version 2, no swinging obstacles: freed cells per comparison, split by fresh-scan vs stale-scan ticks and by distance from a real surface. `fresh` = a new scan every tick, `still` = robot never moves |
 | `blob_track.py` | `<code_dir> <sim_dir> <seed>` | Speed of each swinging obstacle estimated from the centre of its occupied cells, from a standing robot |
 
 **`target_study.py` needs some setup:**
