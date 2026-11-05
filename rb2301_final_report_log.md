@@ -2,7 +2,13 @@
 
 One entry per decision or mistake. Fill in **Observed** and **Fix** when you find out what actually happened.
 
+> **This is the version 2 (reactive) log, a continuation of the version 1 log.**
+> - **Version 1** (the original code, `obstacle_course.py`): entries D1–D11, M1–M3, R1, E1 and S1 below are copied unchanged from branch `claude/final-project-review-3m8r3v` as of 2026-11-05 (commit `329a919`). Any later version 1 entries are logged on that branch, not here.
+> - **Version 2** (the reactive code, `obstacle_course2.py`): logging starts at the heading **"Version 2 (reactive) starts here"** at the end of this file. Version 2 entries use a `V2-` prefix (V2-D1, V2-M1, ...) so their numbers never clash with version 1.
+
 ---
+
+# Version 1 (original code: `obstacle_course.py`)
 
 ## D1: No heading control (2026-11-03)
 - **Decision:** the robot never commands a rotation. Every `move_2D` call uses `turn = 0`, with no correction to hold the heading.
@@ -177,3 +183,16 @@ One entry per decision or mistake. Fill in **Observed** and **Fix** when you fin
 
 ### Path-following setup (for reference)
 Pure pursuit with the robot treated as a point that can move in any direction: each tick it drives at a constant speed straight towards the path point `lookahead_distance` ahead of it, and it stops within `goal_tolerance` of the last path point. Starting values: lookahead 0.3 m, speed 0.3 m/s, tolerance 0.05 m. Current values: lookahead 0.05 m (see D6), speed 0.3 m/s, tolerance 0.05 m.
+
+---
+---
+
+# Version 2 (reactive) starts here (2026-11-05)
+**Everything above this line is version 1. Everything below it is version 2.**
+
+- **Code:** `src/rb2301_fp/rb2301_fp/obstacle_course2.py` on `main`, a new file for version 2. Version 1 stays in `obstacle_course.py`. Starting point: version 1 at commit `676268b` (S1).
+- **Goal:** no hard-coded door x-value and no hard-coded global goal.
+- **Why (the user's words):** "the prof just said that he would prefer if the whole project is reactive instead of harcoded."
+- Entries are numbered V2-D#, V2-M#, V2-R#, V2-E#, V2-S#.
+
+*(No version 2 entries yet.)*

@@ -1,34 +1,37 @@
 # Claude session context: RB2301 final project (read this first in a new chat or after a context reset)
 
 Saved 2026-11-03, last updated 2026-11-05. It lets work continue seamlessly after context compaction **or in a new chat**.
-It lives on branch `claude/final-project-review-3m8r3v` (with the report log and `claude_tools/`). The user's own code is on `main`, which Claude must never change.
+**This copy is for version 2 (the reactive code).** It lives on branch `claude/reactive-version` (with the report log and `claude_tools/`). Version 1 has its own copy on `claude/final-project-review-3m8r3v`, kept by a different chat (section 00). The user's own code is on `main`, which Claude must never change.
 
-## 00. Current task (from 2026-11-05, a new chat started for it)
+## 00. Current task: version 2, the reactive code (from 2026-11-05, a new chat started for it)
 - **Goal:** help the user create a **new version of the code**, based on the current codebase (`main` at `676268b`, which ran the full course in Gazebo: S1 in the log), using a different approach: **no hard-coded door x-value and no hard-coded global goal.**
 - **Why, in the user's words:** "the prof just said that he would prefer if the whole project is reactive instead of harcoded."
 - **The user designs the new approach; Claude translates it into code.** All the ground rules in section 1 still apply.
   - The user hasn't described the new approach yet, so **don't propose one. Ask for or wait for their plan.**
   - Critique their logic only if they explicitly ask.
-- **Where the new version lives** (a new file, their own branch, or edits to `obstacle_course.py`) is the user's decision. Claude never edits `main` or the user's files.
+- **Where the new version lives (the user's decision, 2026-11-05):** a new file, `src/rb2301_fp/rb2301_fp/obstacle_course2.py`, on `main`. Version 1 stays in `obstacle_course.py`. Claude never edits `main` or the user's files.
 - **Hard-coded values in the current code, for reference only** (a list of facts, not advice; the user named only the door x and the goal):
   - `self.global_goal`: used for the distance in `select_target` / `select_target2`, and for the stop at the goal after the door;
   - `self.door_x` = 3.4 (Gazebo), and `cx >= 2.9` in the real branch: switch to the after-door logic;
   - `self.origin` with `map_size_x` / `map_size_y` (6.02 × 4.5 m): where the grid sits;
   - LiDAR offsets 0.114 (Gazebo) and 0.045 (real); centre offset 0.0725;
   - after the door: the 0.25 m clearance, the front quarters `last_scan[:91]` and `last_scan[270:]`, and `move_2D(0.5, 0, 0)`.
-- **The old chat** (session `01VT1WaLnxVP53q3RnFi24Uu`) handed over to the new chat. Only the new chat updates the report log from now on.
+- **Two chats, two branches (set up 2026-11-05):**
+  - the old chat (session `01VT1WaLnxVP53q3RnFi24Uu`) is **still in use, for version 1 only** (`obstacle_course.py`). It logs on `claude/final-project-review-3m8r3v`;
+  - this chat handles version 2 and logs **only** on `claude/reactive-version`. Never push to the other branch.
+  - The version 2 log is a continuation of the version 1 log: it starts with a copy of the version 1 entries (as of commit `329a919`), and version 2 entries go under the heading "Version 2 (reactive) starts here" at the end.
 
 ## 0. First steps in a new chat or after a context reset
 1. **Read this whole file, then `rb2301_final_report_log.md` and `claude_tools/README.md`.**
 2. **Make sure your branch has these files.**
    - **On the user's own machine** (Claude desktop app, working directory `~/Downloads/rb2301_final_project-main`): that folder is the user's, and it must stay on `main`. The user works only on `main` and wants no other local branches. **Never `git checkout` or create branches in it.** Instead, clone the Claude branch into the scratchpad and do all log, context and tools work there:
      ```bash
-     git clone -q --branch claude/final-project-review-3m8r3v git@github.com:SuHuaiYu9/rb2301_final_CA.git "$SP/claude_branch"
+     git clone -q --branch claude/reactive-version git@github.com:SuHuaiYu9/rb2301_final_CA.git "$SP/claude_branch"
      ```
      (2026-11-05: a session checked out the Claude branch in the user's folder, which confused them; it was switched back to `main` and the local branch copy deleted.)
-   - **In a cloud session,** your designated branch may differ from `claude/final-project-review-3m8r3v`. If it does, start it from the Claude branch so the log, this file and the tools carry over:
+   - **In a cloud session,** your designated branch may differ from `claude/reactive-version`. If it does, start it from this branch so the log, this file and the tools carry over:
    ```bash
-   git fetch origin claude/final-project-review-3m8r3v && git checkout -B <your-designated-branch> origin/claude/final-project-review-3m8r3v
+   git fetch origin claude/reactive-version && git checkout -B <your-designated-branch> origin/claude/reactive-version
    ```
    Commit and push the log there. Tell the user which branch now holds the log.
 3. **Get the user's current code** into your scratchpad (`$SP` = the scratchpad directory from your system prompt):
@@ -42,18 +45,19 @@ It lives on branch `claude/final-project-review-3m8r3v` (with the report log and
 6. **Continue from section 00 (current task),** using section 2 for the state of things.
 
 ## 0b. How to update the report log (whenever the user says "log this")
-- **File:** `rb2301_final_report_log.md` in your clone of branch `claude/final-project-review-3m8r3v` (`$SP/claude_branch/` on the user's machine; `/home/user/rb2301_final_CA/` in the old cloud session).
+- **File:** `rb2301_final_report_log.md` in your clone of branch `claude/reactive-version` (`$SP/claude_branch/` on the user's machine).
+- **Where:** add version 2 entries under the heading "Version 2 (reactive) starts here" at the end of the file. Don't add or change version 1 entries here; the old chat logs those on its own branch.
 - **Entry types:**
   - `D#` = a decision the user made;
   - `M#` = a problem or mistake observed;
   - `R#` = a real-robot run;
   - `E#` = an error or crash;
   - `S#` = a milestone or success.
-  Next free numbers: **D12, M4, R2, E2, S2**.
+  Version 2 entries use a **`V2-` prefix** so they never clash with version 1 numbers. Next free numbers: **V2-D1, V2-M1, V2-R1, V2-E1, V2-S1**.
 - **Fields:** Decision/Observed, Why, Potential errors (only if they ask), Observed, Fix. Leave Fix blank unless they say what they did. Add a "Later:" line to an older entry when a value changes, as with D5.
 - **Record the user's own remarks for the report faithfully,** as with R1's "Remark for the report".
 - **Commit and push:** `git add rb2301_final_report_log.md && git commit -m "Log ..."` with the trailer lines **your own session's** system prompt gives (Co-Authored-By, plus your own Claude-Session URL, not the old one). Then push to your branch (section 0, step 2). Push access works.
-- **Also offer to log** things that are clearly report-worthy, but only offer; don't log without being asked. Currently offered and unanswered: the no-path investigation results (section 5).
+- **Also offer to log** things that are clearly report-worthy, but only offer; don't log without being asked.
 
 ---
 
@@ -93,9 +97,10 @@ It lives on branch `claude/final-project-review-3m8r3v` (with the report log and
 - **Dynamic obstacles:** handled in Gazebo by D10 (stop and wait). The user's first idea, comparing grids, got an evidence-based critique (logged under D10) and was dropped.
 - **Critique permission:** the user allowed high-level critique for ONE question ("you are allowed to give high-level logic critique now"). The default rule (section 1) still applies.
 - **Last thing discussed (2026-11-05):** D9–D11 and S1 were logged and pushed. Then the user started a new chat to build the reactive version (section 00). The goal-stop bug and E1 are still open in the current code.
+- **In this chat (2026-11-05):** the user created `obstacle_course2.py` for version 2 (not yet pushed when this was written). The version 1 / version 2 branch split was set up (section 00). The user hasn't described the reactive approach yet.
 - **About the user:** casual and blunt (swears), learns by doing. Sometimes sends code as screenshots, sometimes pushes to `main` and says "check it". If they say "check" without attaching code, look on GitHub `main`.
 
-## 3. User's current algorithm (`src/rb2301_fp/rb2301_fp/obstacle_course.py` on `main`, commit `676268b`)
+## 3. Version 1 algorithm, the starting point for version 2 (`src/rb2301_fp/rb2301_fp/obstacle_course.py` on `main`, commit `676268b`)
 - **Settings** in `__init__` by `is_simulation`:
 
   | Setting | Gazebo | Real robot |
@@ -199,6 +204,7 @@ It lives on branch `claude/final-project-review-3m8r3v` (with the report log and
   - The harness takes `<code_dir>` = `<clone>/src/rb2301_fp/rb2301_fp` and `<sim_dir>` = `claude_tools/sim`.
   - Scripts that depend on the map override the node's grid so it covers each 2D layout (test setup only).
   - **For the new reactive version,** `target_study.py`'s goal override and `DOOR_X` patch may no longer apply, so adapt the scripts rather than assuming they fit.
+  - **The scripts do `import obstacle_course as oc`.** To run version 2, copy `obstacle_course2.py` into a scratch folder as `obstacle_course.py` and pass that folder as `<code_dir>` (copy `optitrack_variables.config` too for real mode), or adapt the import.
 - **Claude's own navigator** (`course_navigator.py` / `nav.py`): **the user rejected it. Never suggest it.** It's not in the repo.
 - **Don't use `pkill -f <name>`** where the pattern matches this shell's own command line, or the shell kills itself (exit 144). Use the `[x]` bracket trick instead.
 - **When deleting:** use `"${VAR:?}"` paths. A safety check blocks `rm -rf $VAR`.
@@ -214,3 +220,5 @@ Entries:
 - **D11** separate buffer sizes along x and y; **S1** first full run of the course in Gazebo (commit `676268b`), with the user's remark.
 
 Most "Fix" fields are blank for the user to fill in.
+
+**Version 2 entries** (under "Version 2 (reactive) starts here"): none yet.
