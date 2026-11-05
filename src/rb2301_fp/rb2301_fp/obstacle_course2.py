@@ -304,45 +304,35 @@ class ObstacleCourseNode(Node):
             frontier = frontier_cells(buffered, self.occupancy_grid)
             
 
-            #what if we replan A* on every other callback?
-            if self.passed_door:
-                distance_to_goal = np.hypot(self.global_goal[0]-cx,self.global_goal[1]-cy)
-                if distance_to_goal<=self.goal_tolerance:
-                    self.move_2D(0,0,0)
-                    print("reached goal yay")
-
-                #go for the right wall straight until 2cm away
-                if self.last_scan[270]>=0.15 and False:
-                    self.move_2D(0,-0.5,0)
+            #dynamic obstacle detection: every compare_every callbacks, look at the cells saved last time again
+            if not self.dynamic_state and self.counter % self.compare_every == 0:
+                if self.prev_window is not None:
+                    pi, pj, pvals = self.prev_window
+                    freed = np.count_nonzero((pvals == 99) & (self.occupancy_grid[pi, pj] == 0))   # occupied -> free
+                    if freed >= self.dynamic_threshold:
+                        self.dynamic_state = True
+                        print(f"dynamic obstacles detected, {freed} cells went occupied -> free")
+                wi, wj = window_cells(cx, cy, heading, self.window_ahead, self.window_width, self.origin,
+                                      self.occupancy_grid_resolution, self.grid_n_x, self.grid_n_y)
+                self.prev_window = (wi, wj, self.occupancy_grid[wi, wj])       # saved for the next comparison
+            
+            if self.dynamic_state:
+                front_left_quadrant = self.last_scan[:91]
+                front_right_quadrant = self.last_scan[270:]
+                min_distance = 0.22
+                if np.all(front_left_quadrant > min_distance) and np.all(front_right_quadrant > min_distance):
+                    self.move_2D(self.pursuit_speed, 0, 0)
                 else:
-                    front_left_quadrant = self.last_scan[:91]
-                    front_right_quadrant = self.last_scan[270:]
-                    min_distance = 0.25
-                    if np.all(front_left_quadrant>min_distance) and np.all(front_right_quadrant>min_distance):
-                        self.move_2D(0.5,0,0)
-                    else:
-                        print("something blocking front left n front right")
-                        self.move_2D(0,0,0)
-
+                    print("something blocking front left n front right")
+                    self.move_2D(0, 0, 0)
+            
             else:
-                if self.counter%2: #the below code gets overwritten immediately by the next timercallback's if branch of door passed
-                    if cx>=self.door_x: #will this change in the real course??????????
-                        print(f"passed door,{self.pose[0]}")
-                        self.passed_door = True
-                        self.target = select_target3(buffered, self.occupancy_grid, cx, cy, heading, self.occupancy_grid_resolution, self.origin)
-                        self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
-                                    (self.target[0], self.target[1]))
-                        if not self.path:
-                            self.get_logger().info('no path found bro')
-                    else:
-                        # self.target = select_target(frontier, self.global_goal,self.origin,self.occupancy_grid_resolution)
-                        #self.target = select_target2(buffered,self.occupancy_grid,self.global_goal,self.occupancy_grid_resolution,self.origin)
-                        self.target = select_target3(buffered, self.occupancy_grid, cx, cy, heading, self.occupancy_grid_resolution, self.origin)
-                        print('select target 3 being run')
-                        self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
-                                    (self.target[0], self.target[1]))
-                        if not self.path:
-                            self.get_logger().info('no path found bro')
+                if self.counter%2:
+                    self.target = select_target3(buffered, self.occupancy_grid, cx, cy, heading, self.occupancy_grid_resolution, self.origin)
+                    self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
+                                (self.target[0], self.target[1]))
+                    if not self.path:
+                        self.get_logger().info('no path found bro')
                 
                 #now i have an A* path that is replanned whenever half the previous plan has finished
                 #now i need the pid controller
@@ -393,7 +383,6 @@ class ObstacleCourseNode(Node):
             #should the below 3 arrays be variables or object attributes? for eg: self.buffered instead
             buffered = inflate_square(occ, round((self.robot_length/2)/self.occupancy_grid_resolution),round((self.robot_width/2)/self.occupancy_grid_resolution))      # 8 cells x 2 cm = 0.16 m, buffered is the grid to use for traversal
             frontier = frontier_cells(buffered, self.occupancy_grid)
-            
             
             #dynamic obstacle detection: every compare_every callbacks, look at the cells saved last time again
             if not self.dynamic_state and self.counter % self.compare_every == 0:
