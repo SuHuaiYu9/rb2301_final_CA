@@ -183,6 +183,14 @@ class ObstacleCourseNode(Node):
 
         self.passed_door = False
 
+        #dynamic obstacles
+        self.dynamic_state = False      # True once dynamic obstacles are detected; it never goes back
+        self.prev_window = None         # (i, j, values) of the window cells saved at the last comparison
+        self.window_ahead = 0.2         # window: from the robot centre to 0.2 m ahead, along the heading
+        self.window_width = 1.0         # and 1 m wide (0.5 m to each side)
+        self.compare_every = 4          # compare every 4 timer callbacks (0.2 s; Gazebo scans arrive every 0.1 s)
+        self.dynamic_threshold = 25     # placeholder: how many window cells must go occupied -> free
+
         
 
     def sub_scan_callback(self, msg):
@@ -317,7 +325,7 @@ class ObstacleCourseNode(Node):
                         self.move_2D(0,0,0)
 
             else:
-                if self.counter%2:
+                if self.counter%2: #the below code gets overwritten immediately by the next timercallback's if branch of door passed
                     if cx>=self.door_x: #will this change in the real course??????????
                         print(f"passed door,{self.pose[0]}")
                         self.passed_door = True
@@ -330,6 +338,7 @@ class ObstacleCourseNode(Node):
                         # self.target = select_target(frontier, self.global_goal,self.origin,self.occupancy_grid_resolution)
                         #self.target = select_target2(buffered,self.occupancy_grid,self.global_goal,self.occupancy_grid_resolution,self.origin)
                         self.target = select_target3(buffered, self.occupancy_grid, cx, cy, heading, self.occupancy_grid_resolution, self.origin)
+                        print('select target 3 being run')
                         self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
                                     (self.target[0], self.target[1]))
                         if not self.path:
@@ -384,22 +393,38 @@ class ObstacleCourseNode(Node):
             #should the below 3 arrays be variables or object attributes? for eg: self.buffered instead
             buffered = inflate_square(occ, round((self.robot_length/2)/self.occupancy_grid_resolution),round((self.robot_width/2)/self.occupancy_grid_resolution))      # 8 cells x 2 cm = 0.16 m, buffered is the grid to use for traversal
             frontier = frontier_cells(buffered, self.occupancy_grid)
-            #what if we replan A* on every other callback?
-            if self.counter%2:
-                if cx>=2.9:
-                    print("passed door")
-                    self.target = select_target2(buffered,self.occupancy_grid,self.global_goal,self.occupancy_grid_resolution,
-                                                 self.origin)
-                    self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
-                                (self.target[0], self.target[1]))
-                    if not self.path:
-                        self.get_logger().info('no path found bro')
+            
+            
+            #dynamic obstacle detection: every compare_every callbacks, look at the cells saved last time again
+            if not self.dynamic_state and self.counter % self.compare_every == 0:
+                if self.prev_window is not None:
+                    pi, pj, pvals = self.prev_window
+                    freed = np.count_nonzero((pvals == 99) & (self.occupancy_grid[pi, pj] == 0))   # occupied -> free
+                    if freed >= self.dynamic_threshold:
+                        self.dynamic_state = True
+                        print(f"dynamic obstacles detected, {freed} cells went occupied -> free")
+                wi, wj = window_cells(cx, cy, heading, self.window_ahead, self.window_width, self.origin,
+                                      self.occupancy_grid_resolution, self.grid_n_x, self.grid_n_y)
+                self.prev_window = (wi, wj, self.occupancy_grid[wi, wj])       # saved for the next comparison
+
+            if self.dynamic_state:
+                front_left_quadrant = self.last_scan[:91]
+                front_right_quadrant = self.last_scan[270:]
+                min_distance = 0.22
+                if np.all(front_left_quadrant > min_distance) and np.all(front_right_quadrant > min_distance):
+                    self.move_2D(self.pursuit_speed, 0, 0)
                 else:
-                    self.target = select_target(frontier, self.global_goal,self.origin,self.occupancy_grid_resolution)
+                    print("something blocking front left n front right")
+                    self.move_2D(0, 0, 0)
+
+            else:
+                if self.counter%2:
+                    self.target = select_target3(buffered, self.occupancy_grid, cx, cy, heading, self.occupancy_grid_resolution, self.origin)
                     self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
                                 (self.target[0], self.target[1]))
                     if not self.path:
                         self.get_logger().info('no path found bro')
+                
             
             
             
@@ -413,9 +438,29 @@ class ObstacleCourseNode(Node):
                 self.move_2D(vx, vy, 0.0)      # no heading control, just strafing it up
             else:
                 self.move_2D(0.0, 0.0, 0.0)    # no path to follow
-            
 
-def select_target3(buffered, raw, cx, cy, heading, occupancy_grid_resolution, origin, A=1.0, B=1.0, C=0.01):
+
+def window_cells(cx, cy, heading, ahead, width, origin, occupancy_grid_resolution, grid_n_x, grid_n_y):
+    '''Grid indices (i, j) of every cell whose centre is 0 to `ahead` m in front of (cx, cy) along the heading (radians)
+    and at most width/2 m to either side. Cells outside the grid are left out.'''
+    fx, fy = np.cos(heading), np.sin(heading)       # front direction
+    rx, ry = np.sin(heading), -np.cos(heading)      # right direction
+    #bounding box of the window's 4 corners, clipped to the grid
+    xs = [cx + a * fx + s * rx for a in (0, ahead) for s in (-width / 2, width / 2)]
+    ys = [cy + a * fy + s * ry for a in (0, ahead) for s in (-width / 2, width / 2)]
+    i0, j0 = world_to_grid(min(xs), min(ys), origin, occupancy_grid_resolution)
+    i1, j1 = world_to_grid(max(xs), max(ys), origin, occupancy_grid_resolution)
+    i0, j0, i1, j1 = max(i0, 0), max(j0, 0), min(i1, grid_n_x - 1), min(j1, grid_n_y - 1)
+    ii, jj = np.meshgrid(np.arange(i0, i1 + 1), np.arange(j0, j1 + 1), indexing='ij')
+    #keep the cells whose centre is inside the rotated window
+    dx = origin[0] + (ii + 0.5) * occupancy_grid_resolution - cx
+    dy = origin[1] + (jj + 0.5) * occupancy_grid_resolution - cy
+    front = dx * fx + dy * fy
+    right = dx * rx + dy * ry
+    inside = (front >= 0) & (front <= ahead) & (np.abs(right) <= width / 2)
+    return ii[inside], jj[inside]
+
+def select_target3(buffered, raw, cx, cy, heading, occupancy_grid_resolution, origin, A=1.0, B=1.0, C=0.5):
     '''Weighted score, no global goal: score = A*(right distance) + B*(front distance) + C*(unknown neighbours).
     right/front are measured in metres from the robot centre (cx, cy), along the robot's heading (radians).
     Cells to the left of or behind the robot get negative distances. Only seen, free cells outside the buffer
