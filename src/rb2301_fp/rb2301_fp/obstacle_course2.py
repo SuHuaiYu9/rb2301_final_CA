@@ -188,8 +188,10 @@ class ObstacleCourseNode(Node):
         self.prev_window = None         # (i, j, values) of the window cells saved at the last comparison
         self.window_ahead = 0.2         # window: from the robot centre to 0.2 m ahead, along the heading
         self.window_width = 0.5        # and 1 m wide (0.5 m to each side)
-        self.compare_every = 2        # compare every 4 timer callbacks (0.2 s; Gazebo scans arrive every 0.1 s)
+        self.compare_every = 8        # compare every 4 timer callbacks (0.2 s; Gazebo scans arrive every 0.1 s)
         self.dynamic_threshold = 15     # placeholder: how many window cells must go occupied -> free
+        self.still_ticks = 0            # timer callbacks the robot has been stopped for in the dynamic state
+        self.wait_ticks = 4             # "a while": callbacks to wait after stopping before checking for a false alarm
 
         
 
@@ -322,18 +324,22 @@ class ObstacleCourseNode(Node):
                 min_distance = 0.22
                 if np.all(front_left_quadrant > min_distance) and np.all(front_right_quadrant > min_distance):
                     self.move_2D(self.pursuit_speed, 0, 0)
+                    self.still_ticks = 0                # moving again: the wait starts over the next time it stops
                 else:
                     print("something blocking front left n front right")
                     self.move_2D(0, 0, 0)
-                    if self.prev_window is not None:
+                    if self.still_ticks == 0:           # just stopped: save the window to check after the wait
+                        wi, wj = window_cells(cx, cy, heading, self.window_ahead, self.window_width, self.origin,
+                                              self.occupancy_grid_resolution, self.grid_n_x, self.grid_n_y)
+                        self.prev_window = (wi, wj, self.occupancy_grid[wi, wj])
+                    self.still_ticks += 1
+                    if self.still_ticks > self.wait_ticks:   # wait_ticks callbacks since the window was saved
                         pi, pj, pvals = self.prev_window
                         freed = np.count_nonzero((pvals == 99) & (self.occupancy_grid[pi, pj] == 0))   # occupied -> free
                         if freed <= 5:
                             self.dynamic_state = False
                             print(f"false alarm")
-                    wi, wj = window_cells(cx, cy, heading, self.window_ahead, self.window_width, self.origin,
-                                          self.occupancy_grid_resolution, self.grid_n_x, self.grid_n_y)
-                    self.prev_window = (wi, wj, self.occupancy_grid[wi, wj])       # saved for the next comparison
+                        self.still_ticks = 0            # next blocked tick saves a new window and waits again
                     
             
             else:
