@@ -1,19 +1,39 @@
-# Claude session context: RB2301 final project (read this first after a context reset)
+# Claude session context: RB2301 final project (read this first in a new chat or after a context reset)
 
-Saved 2026-11-03, updated 2026-11-04, so work can continue seamlessly after context compaction. This lives on branch
-`claude/final-project-review-3m8r3v` only. The user's own code is on `main`, which Claude must never change.
+Saved 2026-11-03, last updated 2026-11-05. It lets work continue seamlessly after context compaction **or in a new chat**.
+It lives on branch `claude/final-project-review-3m8r3v` (with the report log and `claude_tools/`). The user's own code is on `main`, which Claude must never change.
 
-## 0. First steps after a context reset
-1. **Read this whole file, then the report log** `/home/user/rb2301_final_CA/rb2301_final_report_log.md`, so you know every logged entry.
-2. **Bring the clone of the user's code up to date:**
+## 00. Current task (from 2026-11-05, a new chat started for it)
+- **Goal:** help the user create a **new version of the code**, based on the current codebase (`main` at `676268b`, which ran the full course in Gazebo: S1 in the log), using a different approach: **no hard-coded door x-value and no hard-coded global goal.**
+- **Why, in the user's words:** "the prof just said that he would prefer if the whole project is reactive instead of harcoded."
+- **The user designs the new approach; Claude translates it into code.** All the ground rules in section 1 still apply.
+  - The user hasn't described the new approach yet, so **don't propose one. Ask for or wait for their plan.**
+  - Critique their logic only if they explicitly ask.
+- **Where the new version lives** (a new file, their own branch, or edits to `obstacle_course.py`) is the user's decision. Claude never edits `main` or the user's files.
+- **Hard-coded values in the current code, for reference only** (a list of facts, not advice; the user named only the door x and the goal):
+  - `self.global_goal`: used for the distance in `select_target` / `select_target2`, and for the stop at the goal after the door;
+  - `self.door_x` = 3.4 (Gazebo), and `cx >= 2.9` in the real branch: switch to the after-door logic;
+  - `self.origin` with `map_size_x` / `map_size_y` (6.02 × 4.5 m): where the grid sits;
+  - LiDAR offsets 0.114 (Gazebo) and 0.045 (real); centre offset 0.0725;
+  - after the door: the 0.25 m clearance, the front quarters `last_scan[:91]` and `last_scan[270:]`, and `move_2D(0.5, 0, 0)`.
+- **The old chat** (session `01VT1WaLnxVP53q3RnFi24Uu`) handed over to the new chat. Only the new chat updates the report log from now on.
+
+## 0. First steps in a new chat or after a context reset
+1. **Read this whole file, then `rb2301_final_report_log.md` and `claude_tools/README.md`.**
+2. **Make sure your branch has these files.** Your session's designated branch may differ from `claude/final-project-review-3m8r3v`. If it does, start it from the Claude branch so the log, this file and the tools carry over:
    ```bash
-   SP=/tmp/claude-0/-home-user-rb2301-final-CA/be22f863-093c-51e5-b646-f1aab5ca3d5f/scratchpad
-   cd "$SP/user_repo" && git fetch -q --depth 10 origin main && git checkout -q FETCH_HEAD && git log --oneline -3
+   git fetch origin claude/final-project-review-3m8r3v && git checkout -B <your-designated-branch> origin/claude/final-project-review-3m8r3v
    ```
-   If the scratchpad is gone (environment reset): `git clone --depth 10 https://github.com/SuHuaiYu9/rb2301_final_CA.git "$SP/user_repo"`.
-   If the 2D simulator and harness in `/tmp/fp_work` and `$SP/harness` are gone, they can't be recovered. Say so, and rebuild them only if an investigation needs them.
-3. **Re-read section 1 (ground rules)** before answering. The most common way to upset this user is giving advice they didn't ask for.
-4. **Continue from section 2, "Last thing discussed".**
+   Commit and push the log there. Tell the user which branch now holds the log.
+3. **Get the user's current code** into your scratchpad (`$SP` = the scratchpad directory from your system prompt):
+   ```bash
+   git clone --depth 10 https://github.com/SuHuaiYu9/rb2301_final_CA.git "$SP/user_repo"     # first time
+   cd "$SP/user_repo" && git fetch -q --depth 10 origin main && git checkout -q FETCH_HEAD && git log --oneline -3   # each "check it"
+   ```
+   The user may also create their own branch for the new version. If they say "check it", ask which branch if it isn't `main`.
+4. **Test tools:** `claude_tools/` (2D simulator and test scripts; see its README). Previous sessions' scratchpad copies are gone; don't refer to them.
+5. **Re-read section 1 (ground rules)** before answering. The most common way to upset this user is giving advice they didn't ask for.
+6. **Continue from section 00 (current task),** using section 2 for the state of things.
 
 ## 0b. How to update the report log (whenever the user says "log this")
 - **File:** `/home/user/rb2301_final_CA/rb2301_final_report_log.md`, on branch `claude/final-project-review-3m8r3v`.
@@ -26,7 +46,7 @@ Saved 2026-11-03, updated 2026-11-04, so work can continue seamlessly after cont
   Next free numbers: **D12, M4, R2, E2, S2**.
 - **Fields:** Decision/Observed, Why, Potential errors (only if they ask), Observed, Fix. Leave Fix blank unless they say what they did. Add a "Later:" line to an older entry when a value changes, as with D5.
 - **Record the user's own remarks for the report faithfully,** as with R1's "Remark for the report".
-- **Commit and push:** `git add rb2301_final_report_log.md && git commit -m "Log ..."` with the Co-Authored-By and Claude-Session trailer lines, then `git push origin claude/final-project-review-3m8r3v`. Push access works.
+- **Commit and push:** `git add rb2301_final_report_log.md && git commit -m "Log ..."` with the trailer lines **your own session's** system prompt gives (Co-Authored-By, plus your own Claude-Session URL, not the old one). Then push to your branch (section 0, step 2). Push access works.
 - **Also offer to log** things that are clearly report-worthy, but only offer; don't log without being asked. Currently offered and unanswered: the no-path investigation results (section 5).
 
 ---
@@ -38,13 +58,22 @@ Saved 2026-11-03, updated 2026-11-04, so work can continue seamlessly after cont
 4. **One exception:** if something on the real robot could hurt someone or damage hardware, say so once.
 5. **Never suggest** heading hold, or rotating world-frame velocity into the robot frame. D1 and D2 are deliberate learning choices.
 6. **When the user is just "updating" you on a plan,** acknowledge briefly and don't advise. They got angry about unsolicited advice.
-7. **Never modify their codebase or `main`.** Claude maintains only `rb2301_final_report_log.md` (and this file) on the Claude branch. Log only what they ask to log, and record their remarks faithfully.
+7. **Never modify their codebase or `main`.** Claude maintains only `rb2301_final_report_log.md`, this file and `claude_tools/`, on the Claude branch. Log only what they ask to log, and record their remarks faithfully.
 8. **They prefer short, minimal answers** when they ask for "only the necessary things".
-9. **To check their code:** they push to GitHub `main`. Fetch it into the scratchpad clone (section 6), run `py_compile`, run the stubbed harness, and report only code-level issues unless asked for more.
+9. **To check their code:** they push to GitHub `main`. Fetch it into the scratchpad clone (section 0, step 3), run `py_compile`, run the harness in `claude_tools/`, and report only code-level issues unless asked for more.
 10. **Answer "why" questions with evidence:** use the 2D simulator harness and real measurements, not guesses. Say when something is unverified.
-11. **Git:** commit messages end with the session's Co-Authored-By and Claude-Session lines. Push to `claude/final-project-review-3m8r3v` (push works now; GitHub was connected mid-session). A stop hook demands that uncommitted or untracked files in `/home/user/rb2301_final_CA` be committed and pushed.
+11. **Git:** commit messages end with your own session's Co-Authored-By and Claude-Session lines. Push to your Claude branch (section 0, step 2), never to `main`. A stop hook may demand that uncommitted or untracked files in the working directory be committed and pushed.
+12. **Code suggestions must be minimal,** and must NOT modify any given template code unless a comment in it explicitly says it can be modified (for example the `###### INSERT CODE HERE ######` block). New helper functions can go outside that block.
 
-## 2. Status right now (updated 2026-11-04)
+**The user's own words** (verbatim, from the first chat):
+- "your only job is to help me occasionally translate my ideas/high-level logic into python code. you are not to correct my higher level logic and algorithmic-level thinking without explicit instructions, even if you notice clear errors, or loopholes, or edge cases, or possible mistakes/drifts. i need to be able to discover those myself so i can learn from them... so your only job is to translate my ideas/algorithms correctly and efficiently into code."
+- "do NOT change my codebase... you are only allowed to make suggestions to me, i will do any changes there personally myself."
+- "we want to make MINIMAL code changes... we also should NOT modify ANY given code unless the code has a comment that explicitly says it can be modified."
+- "dont include heading hold(stop suggesting potential real-world fixes for non-ideal scenarios like drift, this is part of my learning opportunity...)"
+- "dont rotate world-frame velocity even when the heading isnt 0"
+- "no dont tell me what to change now!! ... i am just telling you what i want to do, updating you."
+
+## 2. Status right now (updated 2026-11-05)
 - **Milestone S1:** in Gazebo, the robot ran the whole course for the first time (commit `676268b`), with the swinging obstacles on. Logged as D9, D10, D11 and S1.
 - **Known code bug (reported, the user hasn't fixed it yet):** in the after-door branch, the stop at the goal is overridden in the same tick by `move_2D(0.5, 0, 0)`. Suggested fix: `return` after stopping.
 - **Still unhandled:** E1. `select_target2` (now used for every Gazebo target) raises `ValueError` from `np.argmin` when there's no free, seen cell outside the buffer.
@@ -57,7 +86,7 @@ Saved 2026-11-03, updated 2026-11-04, so work can continue seamlessly after cont
 - **M3 (gap too narrow):** the user moved to 1 cm cells. The effect on the gap isn't recorded.
 - **Dynamic obstacles:** handled in Gazebo by D10 (stop and wait). The user's first idea, comparing grids, got an evidence-based critique (logged under D10) and was dropped.
 - **Critique permission:** the user allowed high-level critique for ONE question ("you are allowed to give high-level logic critique now"). The default rule (section 1) still applies.
-- **Last thing discussed (2026-11-04):** the user asked to log D9–D11 and the milestone; that's done and pushed. Likely next: fixing the goal-stop bug, adapting the real robot (measuring origin/goal/door, porting the after-door logic), or writing the report.
+- **Last thing discussed (2026-11-05):** D9–D11 and S1 were logged and pushed. Then the user started a new chat to build the reactive version (section 00). The goal-stop bug and E1 are still open in the current code.
 - **About the user:** casual and blunt (swears), learns by doing. Sometimes sends code as screenshots, sometimes pushes to `main` and says "check it". If they say "check" without attaching code, look on GitHub `main`.
 
 ## 3. User's current algorithm (`src/rb2301_fp/rb2301_fp/obstacle_course.py` on `main`, commit `676268b`)
@@ -160,19 +189,14 @@ Saved 2026-11-03, updated 2026-11-04, so work can continue seamlessly after cont
   - square inflation: 0.5 ms (numpy) vs 3.6 ms (loop).
 
 ## 6. Tools and paths
-- **Scratchpad:** `/tmp/claude-0/-home-user-rb2301-final-CA/be22f863-093c-51e5-b646-f1aab5ca3d5f/scratchpad`
-  - `user_repo/`: shallow clone of the user's repo. Update with `git fetch --depth 10 origin main && git checkout FETCH_HEAD`.
-  - `harness/`, stubbed-ROS runners. Arguments are usually `<code_dir> /tmp/fp_work <seconds> <seed> [swing|noswing]`:
-    - `drive_user_node.py`: crash check, Gazebo mode;
-    - `real_mode_run_phi.py`: real-robot mode;
-    - `contact_probe3.py`: classifies obstacle contacts;
-    - `nopath_study2.py`: no-path causes and outside-course targets;
-    - `door_study2.py`: whether the robot reaches the door.
-  - Test copies of user versions: `prev/` (387d9f7), `np_sticky/`, `np_clearing/`, `A_pose8/`, `B_pose6/`, `C_centre6/`.
-- **2D simulator:** `/tmp/fp_work/sim2d.py`, with `World(rng, mode, swing_model)`, `.lidar()`, `.collides()`, `.swingers` (set to `[]` to remove them) and `run()`.
-- **Claude's own navigator:** `/tmp/fp_work/course_navigator.py`. **The user rejected it. Never suggest it.**
+- **`claude_tools/`** (on the Claude branch): `sim/sim2d.py` (the 2D course) and `harness/*.py` (scripts that run the user's node offline). See `claude_tools/README.md` for arguments and caveats. They were smoke-tested on `676268b` from their place in the repo.
+  - The harness takes `<code_dir>` = `<clone>/src/rb2301_fp/rb2301_fp` and `<sim_dir>` = `claude_tools/sim`.
+  - Scripts that depend on the map override the node's grid so it covers each 2D layout (test setup only).
+  - **For the new reactive version,** `target_study.py`'s goal override and `DOOR_X` patch may no longer apply, so adapt the scripts rather than assuming they fit.
+- **Claude's own navigator** (`course_navigator.py` / `nav.py`): **the user rejected it. Never suggest it.** It's not in the repo.
 - **Don't use `pkill -f <name>`** where the pattern matches this shell's own command line, or the shell kills itself (exit 144). Use the `[x]` bracket trick instead.
 - **When deleting:** use `"${VAR:?}"` paths. A safety check blocks `rm -rf $VAR`.
+- **Harness method that worked well for "why" questions:** wrap or monkeypatch the user's functions on the imported module (for example `oc.A_star`, `oc.select_target`, `oc.frontier_cells`) to record or swap behaviour, and compare variants over several seeds. Say when results come from the 2D test rather than Gazebo.
 
 ## 7. Report log (`rb2301_final_report_log.md`, this branch)
 Entries:
