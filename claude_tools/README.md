@@ -31,6 +31,8 @@ Every script:
 
 `<code_dir>` is the user's package folder, for example `<clone>/src/rb2301_fp/rb2301_fp`. `<sim_dir>` is `claude_tools/sim`.
 
+The scripts `import obstacle_course`. To test the second version (`obstacle_course2.py`), copy it as `obstacle_course.py` into a scratch folder, along with `optitrack_variables.config`, and pass that folder as `<code_dir>`.
+
 | Script | Arguments | What it reports |
 |---|---|---|
 | `drive_user_node.py` | `<code_dir> <sim_dir> <secs>` | Crash check in Gazebo mode, seed 0 |

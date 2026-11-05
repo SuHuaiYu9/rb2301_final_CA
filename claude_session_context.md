@@ -9,7 +9,12 @@ It lives on branch `claude/final-project-review-3m8r3v` (with the report log and
 - **The user designs the new approach; Claude translates it into code.** All the ground rules in section 1 still apply.
   - The user hasn't described the new approach yet, so **don't propose one. Ask for or wait for their plan.**
   - Critique their logic only if they explicitly ask.
-- **Where the new version lives** (a new file, their own branch, or edits to `obstacle_course.py`) is the user's decision. Claude never edits `main` or the user's files.
+- **Where the new version lives (the user decided, 2026-11-05):** a new file **`src/rb2301_fp/rb2301_fp/obstacle_course2.py` on `main`**. The old `obstacle_course.py` stays as the version that achieved S1. When the user says "check it", look at `obstacle_course2.py` on `main`. It wasn't pushed yet when the old chat ended. Claude never edits `main` or the user's files.
+  - **Running it:** `./fp.sh` runs `ros2 run rb2301_fp obstacle_course`, which `src/rb2301_fp/setup.py` maps to `rb2301_fp.obstacle_course:main`, so **`./fp.sh` still runs the OLD file.** The new file runs only by calling it directly (`python3 src/rb2301_fp/rb2301_fp/obstacle_course2.py` after `source install/setup.bash`, if it keeps the `if __name__ == '__main__': main()` ending), or after the user adds an entry point to `setup.py` and rebuilds. The old chat told the user this; changing `setup.py` or `fp.sh` is their decision.
+  - **Testing it with `claude_tools/`:** the harness does `import obstacle_course`. Copy the new file under that name into a scratch folder and pass that folder as `<code_dir>`:
+    ```bash
+    mkdir -p "$SP/v2" && cp "$SP/user_repo/src/rb2301_fp/rb2301_fp/obstacle_course2.py" "$SP/v2/obstacle_course.py" && cp "$SP/user_repo/src/rb2301_fp/rb2301_fp/optitrack_variables.config" "$SP/v2/"
+    ```
 - **Hard-coded values in the current code, for reference only** (a list of facts, not advice; the user named only the door x and the goal):
   - `self.global_goal`: used for the distance in `select_target` / `select_target2`, and for the stop at the goal after the door;
   - `self.door_x` = 3.4 (Gazebo), and `cx >= 2.9` in the real branch: switch to the after-door logic;
