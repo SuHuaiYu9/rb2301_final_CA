@@ -187,9 +187,9 @@ class ObstacleCourseNode(Node):
         self.dynamic_state = False      # True once dynamic obstacles are detected; it never goes back
         self.prev_window = None         # (i, j, values) of the window cells saved at the last comparison
         self.window_ahead = 0.2         # window: from the robot centre to 0.2 m ahead, along the heading
-        self.window_width = 1.0         # and 1 m wide (0.5 m to each side)
-        self.compare_every = 4          # compare every 4 timer callbacks (0.2 s; Gazebo scans arrive every 0.1 s)
-        self.dynamic_threshold = 25     # placeholder: how many window cells must go occupied -> free
+        self.window_width = 0.5        # and 1 m wide (0.5 m to each side)
+        self.compare_every = 2        # compare every 4 timer callbacks (0.2 s; Gazebo scans arrive every 0.1 s)
+        self.dynamic_threshold = 15     # placeholder: how many window cells must go occupied -> free
 
         
 
@@ -325,6 +325,16 @@ class ObstacleCourseNode(Node):
                 else:
                     print("something blocking front left n front right")
                     self.move_2D(0, 0, 0)
+                    if self.prev_window is not None:
+                        pi, pj, pvals = self.prev_window
+                        freed = np.count_nonzero((pvals == 99) & (self.occupancy_grid[pi, pj] == 0))   # occupied -> free
+                        if freed <= 5:
+                            self.dynamic_state = False
+                            print(f"false alarm")
+                    wi, wj = window_cells(cx, cy, heading, self.window_ahead, self.window_width, self.origin,
+                                          self.occupancy_grid_resolution, self.grid_n_x, self.grid_n_y)
+                    self.prev_window = (wi, wj, self.occupancy_grid[wi, wj])       # saved for the next comparison
+                    
             
             else:
                 if self.counter%2:
@@ -413,20 +423,16 @@ class ObstacleCourseNode(Node):
                                 (self.target[0], self.target[1]))
                     if not self.path:
                         self.get_logger().info('no path found bro')
+            
+                #i think now i have an A* path that is replanned whenever half the previous plan has finished
+                #now i need the pid controller
                 
-            
-            
-            
-            
-            #i think now i have an A* path that is replanned whenever half the previous plan has finished
-            #now i need the pid controller
-            
-            if self.path:
-                vx, vy = pure_pursuit(self.path, cx, cy, self.origin,self.occupancy_grid_resolution,self.lookahead_distance,
-                                      self.pursuit_speed,self.goal_tolerance)
-                self.move_2D(vx, vy, 0.0)      # no heading control, just strafing it up
-            else:
-                self.move_2D(0.0, 0.0, 0.0)    # no path to follow
+                if self.path:
+                    vx, vy = pure_pursuit(self.path, cx, cy, self.origin,self.occupancy_grid_resolution,self.lookahead_distance,
+                                        self.pursuit_speed,self.goal_tolerance)
+                    self.move_2D(vx, vy, 0.0)      # no heading control, just strafing it up
+                else:
+                    self.move_2D(0.0, 0.0, 0.0)    # no path to follow
 
 
 def window_cells(cx, cy, heading, ahead, width, origin, occupancy_grid_resolution, grid_n_x, grid_n_y):
