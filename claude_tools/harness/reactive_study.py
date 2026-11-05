@@ -47,7 +47,7 @@ g = w.geom
 node = oc.ObstacleCourseNode(is_simulation=True)
 jr = np.random.default_rng(1000 + seed)
 x = y = th = 0.0; t, ticks = 0.0, 0
-static_hits = swing_hits = 0; in_s = in_w = False; waits = 0; hist = []; outcome = 'TIMEOUT'; crash = ''
+static_hits = swing_hits = crossings = 0; in_s = in_w = False; waits = 0; hist = []; outcome = 'TIMEOUT'; crash = ''
 t_seen = None
 try:
     while t < T_END:
@@ -57,7 +57,9 @@ try:
         node.pose = np.array((x + jr.normal(0, PJ), y + jr.normal(0, PJ), math.degrees(th) + (jr.normal(0, 0.3) if PJ else 0)))
         CMD[:] = [0.0, 0.0, 0.0]
         node.timer_callback()
-        if node.tick < node.wait_until: waits += 1
+        if getattr(node, 'waiting', False): waits += 1
+        if any(p.startswith('crossing') for p in PR): crossings += 1
+        PR.clear()
         if node.pendulums_seen and t_seen is None: t_seen = t
         hit = w.collides(x, y, th, t)
         if hit == 'static' and not in_s: static_hits += 1
@@ -68,7 +70,7 @@ try:
         if SWING == 'none' and x + 0.0725 > w.door[0] + 0.4:
             outcome = 'THROUGH'; break                          # navigation-only test: through the door
         hist.append((x, y))
-        if len(hist) > 600 and math.hypot(x - hist[-600][0], y - hist[-600][1]) < 0.05 and node.tick >= node.wait_until:
+        if len(hist) > 600 and math.hypot(x - hist[-600][0], y - hist[-600][1]) < 0.05 and not getattr(node, 'waiting', False):
             outcome = 'STUCK'; break
         c, s = math.cos(th), math.sin(th)
         x += (c * CMD[0] - s * CMD[1]) * 0.05; y += (s * CMD[0] + c * CMD[1]) * 0.05
@@ -78,6 +80,6 @@ except Exception as e:
 cx = x + 0.0725
 last_sw = max([s['x'] for s in w.swingers], default=w.door[0])
 where = ('past the pendulums' if cx > last_sw + 0.1 else 'past the door' if cx > w.door[0] + 0.1 else 'before the door')
-_print('seed %2d %-6s noise %.2f | %-7s at %5.1f s | robot ends (%.2f, %.2f), %s, %.2f m from the end wall | static contacts %d, pendulum contacts %d | waited %.1f s | pendulums seen at %s%s\n'
-       % (seed, SWING, NOISE, outcome, t, cx, y, where, g['xe'] - cx, static_hits, swing_hits, waits * 0.05,
+_print('seed %2d %-6s noise %.2f | %-7s at %5.1f s | robot ends (%.2f, %.2f), %s, %.2f m from the end wall | static contacts %d, pendulum contacts %d | waited %.1f s, crossings %d, lines found %d | pendulums seen at %s%s\n'
+       % (seed, SWING, NOISE, outcome, t, cx, y, where, g['xe'] - cx, static_hits, swing_hits, waits * 0.05, crossings, sum(1 for L in getattr(node, 'lines', []) if L['confirmed']),
           ('%.1f s' % t_seen) if t_seen is not None else 'never', crash))

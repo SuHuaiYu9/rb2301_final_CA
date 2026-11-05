@@ -92,7 +92,7 @@ def free_distance(points, theta, half_length, half_width, side_margin, shift=0.0
         return max_range
     return float(np.min(along[in_strip]) - reach)
 
-def best_lane(points, theta, half_length, half_width, side_margin, shifts=(0.0, 0.04, -0.04, 0.08, -0.08, 0.12, -0.12), cap=0.6):
+def best_lane(points, theta, half_length, half_width, side_margin, shifts=(0.0, 0.02, -0.02, 0.04, -0.04, 0.06, -0.06, 0.08, -0.08, 0.10, -0.10, 0.12, -0.12), cap=0.6):
     '''Lines the robot up with gaps: tries sliding along theta from a few sideways-shifted positions
     (positive = left of theta). A shift only counts if the robot has room to slide that far sideways first.
     Prefers no shift unless a shift gives clearly more room. Returns (free distance, shift).'''
@@ -148,6 +148,48 @@ def changed_points(prev, now, angle_step, margin=0.10):
     points of the previous scan that the new scan now sees past (something left), and points of the new scan
     that the previous scan saw past (something arrived). A static wall gives neither, however the robot moves."""
     return np.vstack((seen_past(prev, now, angle_step, margin), seen_past(now, prev, angle_step, margin)))
+
+def along_and_left(wx, wy, heading):
+    """World (x, y) -> (s, l): s = distance along the robot's forward direction, l = distance to its left.
+    The robot never rotates, and each pendulum swings across the course, so a pendulum's line keeps the same s."""
+    c, sn = np.cos(heading), np.sin(heading)
+    return wx * c + wy * sn, -wx * sn + wy * c
+
+def update_lines(lines, s_moved, tick, window=40, need=5, tol=0.12, support=4):
+    """Finds pendulum lines from moving points: a pendulum's moving points keep the same s.
+    lines: list of dicts {'s' (the pendulum's near face), 'hits' (ticks with support), 'confirmed', 'crossed'}.
+    A line is confirmed once it has support (`support`+ points within tol) on `need` scan pairs within `window` ticks.
+    The line is kept at the nearest its points have been (10th percentile, and it only ever moves closer), because
+    a thick pendulum's sides add moving points further back, and stopping early is the safe mistake."""
+    s_moved = np.sort(s_moved)
+    used = np.zeros(len(s_moved), dtype=bool)
+    for line in lines:
+        near = np.abs(s_moved - line['s']) <= tol
+        if np.count_nonzero(near) >= support:
+            line['s'] = min(line['s'], float(np.percentile(s_moved[near], 10)))
+            line['hits'] = [t for t in line['hits'] if tick - t <= window] + [tick]
+            if not line['confirmed'] and len(line['hits']) >= need:
+                line['confirmed'] = True
+                print("pendulum line found")
+        used |= near
+    rest = s_moved[~used]                       # leftover points: new candidate lines where `support`+ sit together
+    start = 0
+    for i in range(1, len(rest) + 1):
+        if i == len(rest) or rest[i] - rest[i - 1] > tol:
+            if i - start >= support:
+                lines.append({'s': float(np.percentile(rest[start:i], 10)), 'hits': [tick], 'confirmed': False, 'crossed': False})
+            start = i
+
+def line_sides(s, l, s_line, lane_lo, lane_hi, before=0.06, behind=0.20):
+    """Looks along a pendulum line (scan points with s from `before` in front of s_line to `behind` past it, allowing
+    for the pendulum's thickness). Returns (something inside the robot's lane [lane_lo, lane_hi]?,
+    distance from the lane to the nearest point on its left, ... on its right); inf if there is none.
+    A wall's distance stays the same; a pendulum's changes as it swings."""
+    on = l[(s >= s_line - before) & (s <= s_line + behind)]
+    inside = bool(np.any((on >= lane_lo) & (on <= lane_hi)))
+    left = on[on > lane_hi] - lane_hi
+    right = lane_lo - on[on < lane_lo]
+    return inside, (float(left.min()) if len(left) else np.inf), (float(right.min()) if len(right) else np.inf)
 
 class LidarNode(Node):
     def __init__(self):
@@ -238,16 +280,20 @@ class ObstacleCourseNode(Node):
         # moving obstacles (pendulums)
         self.prev_scan = None           # (lidar_x, lidar_y, heading, ranges) of the previous scan
         self.scan_used = None           # the scan array used last tick, to notice when a new one arrives
-        self.seen_min = 5               # this many moved points ahead on 2 scans in a row = the pendulums are moving
-        self.prev_ahead_count = 0       # moved points ahead in the previous scan pair
-        self.wait_min = 3               # this many moved points in the robot's path = wait
-        self.wait_ahead = 0.5           # path region: up to 0.5 m beyond the robot's edge ...
-        self.wait_side = 0.3            # ... and 0.3 m wider than its strip on each side
-        self.wait_ticks = 10            # keep waiting 10 ticks (0.5 s) after the last movement in the path
-        self.wait_until = 0
-        self.pendulums_seen = False     # pendulums seen moving ahead (just for printing)
-        self.pendulums_behind = False   # pendulums seen moving behind the robot: it's past them
-        self.prev_behind_count = 0
+        self.lines = []                 # pendulum lines found so far (see update_lines)
+        self.pendulums_seen = False     # at least one pendulum line found
+        self.standoff = 0.08            # wait with the robot's front this far before a pendulum line
+        self.line_depth = 0.20          # a pendulum line is crossed once the robot's rear is this far past it (pendulum thickness + margin)
+        self.blocked_ticks = 0          # ticks a crossing has been physically blocked
+        self.lane_margin = 0.05         # the robot's lane: its width plus this much on each side
+        self.waiting_at = None          # s of the line the robot is waiting at
+        self.waiting = False
+        self.prev_sides = None          # (left, right) distances from the lane on that line in the previous scan
+        self.prev_sides_tick = 0
+        self.in_lane_tick = -1000       # last tick a pendulum overlapped the robot's lane
+        self.moving_tick = 0            # last tick anything on the line moved
+        self.go = False                 # cleared to cross the line
+        self.crossing = None            # s of the line being crossed
         self.goal_ticks = 0             # ticks in a row that forward has been blocked after the pendulums
         self.done = False
         self.tick = 0
@@ -329,7 +375,25 @@ class ObstacleCourseNode(Node):
         if self.tick % self.record_every == 0:
             self.visited.append((cx, cy))
 
-        # 1) moving obstacles: each time a new scan arrives, compare it with the previous one
+        # where the robot is along the course (s) and across it (l); the next pendulum line ahead of it
+        s_robot, l_robot = along_and_left(cx, cy, heading)
+        front = s_robot + self.half_length
+        for line in self.lines:
+            if line['confirmed'] and not line['crossed'] and s_robot - self.half_length > line['s'] + self.line_depth:
+                line['crossed'] = True                                 # the whole robot is past it
+        ahead = [line for line in self.lines if line['confirmed'] and not line['crossed'] and line['s'] > front - 0.03]
+        line = min(ahead, key=lambda L: L['s']) if ahead else None
+        # possible lines too (movement seen there in the last 2 s, not confirmed yet): don't drive into them
+        maybe = [L for L in self.lines if not L['crossed'] and L['s'] > front - 0.03 and (L['confirmed'] or self.tick - L['hits'][-1] <= 40)]
+        stop_at = min(L['s'] for L in maybe) if maybe else None   # s of the nearest line the robot must stop short of
+        at_line = line is not None and line['s'] - front <= self.standoff + 0.02
+        if at_line and self.waiting_at != line['s']:                   # just arrived at this line: start watching it
+            self.waiting_at = line['s']
+            self.prev_sides, self.in_lane_tick, self.moving_tick, self.go = None, -1000, self.tick, False
+        if not at_line:
+            self.waiting_at = None
+
+        # 1) each time a new scan arrives: find pendulum lines, and watch the pendulum on the line the robot is at
         if self.last_scan is not self.scan_used:
             self.scan_used = self.last_scan
             lx = cx + self.lidar_ahead * np.cos(heading)               # LiDAR position in the world
@@ -337,46 +401,90 @@ class ObstacleCourseNode(Node):
             now = (lx, ly, heading, self.last_scan)
             if self.prev_scan is not None:
                 wxy = changed_points(self.prev_scan, now, step)
-                dx, dy = wxy[:, 0] - cx, wxy[:, 1] - cy                     # moved points in the robot frame
-                moved = np.column_stack((dx * np.cos(heading) + dy * np.sin(heading), -dx * np.sin(heading) + dy * np.cos(heading)))
-                # anywhere up to 1 m ahead and 0.5 m to each side: the pendulums have been seen moving
-                ahead = np.count_nonzero((moved[:, 0] >= 0) & (moved[:, 0] <= 1.0) & (np.abs(moved[:, 1]) <= 0.5))
-                if ahead >= self.seen_min and self.prev_ahead_count >= self.seen_min and not self.pendulums_seen:
+                s_moved, l_moved = along_and_left(wxy[:, 0], wxy[:, 1], heading)
+                keep = (s_moved > s_robot + 0.15) & (s_moved < s_robot + 2.5) & (np.abs(l_moved - l_robot) < 1.2)
+                update_lines(self.lines, s_moved[keep], self.tick)
+                if not self.pendulums_seen and any(L['confirmed'] for L in self.lines):
                     self.pendulums_seen = True
-                    print("pendulums seen moving")
-                self.prev_ahead_count = ahead
-                # up to 2 m behind the robot: it has gone past the pendulums
-                behind = np.count_nonzero((moved[:, 0] < -self.half_length) & (moved[:, 0] >= -2.0) & (np.abs(moved[:, 1]) <= 1.0))
-                if behind >= self.seen_min and self.prev_behind_count >= self.seen_min and not self.pendulums_behind:
-                    self.pendulums_behind = True
-                    print("pendulums seen moving behind: past them")
-                self.prev_behind_count = behind
-                # in the robot's path (the strip along its current direction, just ahead of it): wait
-                theta = 0.0 if self.direction_k is None else self.direction_k * 2 * np.pi / self.n_directions
-                along, side, reach, half_strip = strip_coords(moved, theta, self.half_length, self.half_width)
-                in_path = np.count_nonzero((along >= reach) & (along <= reach + self.wait_ahead)
-                                           & (np.abs(side) <= half_strip + self.wait_side))
-                if in_path >= self.wait_min:
-                    self.wait_until = self.tick + self.wait_ticks
             self.prev_scan = now
 
-        # 2) something is moving in the robot's path: stop and wait
-        if self.tick < self.wait_until:
-            self.goal_ticks = 0
-            self.move_2D(0.0, 0.0, 0.0)
+            if at_line:
+                lane_lo = l_robot - self.half_width - self.lane_margin
+                lane_hi = l_robot + self.half_width + self.lane_margin
+                in_lane, d_left, d_right = line_sides(s_robot + points[:, 0], l_robot + points[:, 1], line['s'], lane_lo, lane_hi)
+                v_left = v_right = 0.0                                 # how fast the gap to the lane grows on each side
+                dt = (self.tick - self.prev_sides_tick) * 0.05
+                if self.prev_sides is not None and dt > 0:
+                    if np.isfinite(d_left) and np.isfinite(self.prev_sides[0]):
+                        v_left = (d_left - self.prev_sides[0]) / dt
+                    if np.isfinite(d_right) and np.isfinite(self.prev_sides[1]):
+                        v_right = (d_right - self.prev_sides[1]) / dt
+                approaching = (v_left < -0.05 and d_left < 1.0) or (v_right < -0.05 and d_right < 1.0)
+                moving = abs(v_left) > 0.05 or abs(v_right) > 0.05
+                if line['hits'] and self.tick - line['hits'][-1] <= 20:
+                    moving = True                                      # the motion test saw movement on this line in the last 1 s
+                if in_lane:
+                    self.in_lane_tick = self.tick
+                if moving:
+                    self.moving_tick = self.tick
+                room_left = free_distance(points, np.pi / 2, self.half_length, self.half_width, self.side_margin)
+                room_right = free_distance(points, -np.pi / 2, self.half_length, self.half_width, self.side_margin)
+                leaving_far_side = v_left > 0.05 if room_left > room_right else v_right > 0.05
+                if not in_lane and not approaching:
+                    if leaving_far_side and self.tick - self.in_lane_tick <= 8:
+                        self.go = "the pendulum just left the lane"    # heading for the far side: longest until it's back
+                    elif self.tick - self.moving_tick >= 20:
+                        self.go = "nothing on the line moved for 1 s"
+                elif in_lane and self.tick - self.moving_tick >= 40:
+                    line['crossed'] = True                             # something static has sat there for 2 s: not a pendulum
+                    print("not a pendulum line: ignoring it")
+                self.prev_sides, self.prev_sides_tick = (d_left, d_right), self.tick
+
+        # 2) crossing a line: straight across at full speed, and don't give up halfway
+        if self.crossing is not None:
+            if s_robot - self.half_length > self.crossing + self.line_depth:
+                self.crossing = None                                   # the whole robot is across
+            else:
+                free_ahead = free_distance(points, 0.0, self.half_length, self.half_width, self.side_margin)
+                self.blocked_ticks = self.blocked_ticks + 1 if free_ahead < 0.02 else 0
+                if self.blocked_ticks >= 60:
+                    self.crossing = None                               # blocked for 3 s: something static, give up
+                    print("crossing blocked: giving up")
+                else:
+                    self.move_2D(self.speed if free_ahead >= 0.02 else 0.0, 0.0, 0.0)
+                    return
+
+        # 3) at a line: wait at its edge until cleared to cross
+        self.waiting = at_line and line['s'] == self.waiting_at and not line['crossed']
+        if self.waiting:
+            if self.go:
+                print("crossing: " + self.go)
+                self.crossing, self.go, self.waiting, self.blocked_ticks = line['s'], False, False, 0
+                self.move_2D(self.speed, 0.0, 0.0)
+            else:
+                self.move_2D(0.0, 0.0, 0.0)
             return
 
-        # 3) goal: the pendulums are behind the robot, and it can't move forward any more (for 1 s)
-        if self.pendulums_behind and free_distance(points, 0.0, self.half_length, self.half_width, self.side_margin) < self.free_min:
-            self.goal_ticks += 1
-            self.move_2D(0.0, 0.0, 0.0)
-            if self.goal_ticks >= 20:
-                self.done = True
-                print("goal reached")
+        # 4) past the pendulums (a line has been crossed and no line is ahead): drive straight forward until the robot
+        #    can't move forward any more, for 1 s. That's the goal.
+        if not ahead and any(L['confirmed'] and L['crossed'] for L in self.lines):
+            free_ahead = free_distance(points, 0.0, self.half_length, self.half_width, self.side_margin)
+            wall = all(free_distance(points, a, self.half_length, self.half_width, self.side_margin) < 0.25 for a in (np.pi / 4, -np.pi / 4))
+            if free_ahead < self.free_min:
+                self.goal_ticks = self.goal_ticks + 1 if wall else 0      # a wall, not a pendulum, in front
+                self.move_2D(0.0, 0.0, 0.0)
+                if self.goal_ticks >= 20:
+                    self.done = True
+                    print("goal reached")
+            else:
+                self.goal_ticks = 0
+                speed = min(self.speed, free_ahead)
+                if stop_at is not None:                                # a possible pendulum line ahead: stop short of it
+                    speed = min(speed, max(0.0, 3.0 * (stop_at - front - self.standoff)))
+                self.move_2D(speed, 0.0, 0.0)
             return
-        self.goal_ticks = 0
 
-        # 4) score every direction the robot can slide in:
+        # 5) otherwise, score every direction the robot can slide in:
         #    goal bias + room to move + somewhere new - time already spent there
         visited = np.array(self.visited)
         scores = {}                     # k -> (score, free distance, sideways shift)
@@ -404,7 +512,7 @@ class ObstacleCourseNode(Node):
             self.decided_at = (cx, cy)
         best = self.direction_k
 
-        # 5) move that way (robot frame), sliding sideways towards the best lane; slower when close to something
+        # 6) move that way (robot frame), sliding sideways towards the best lane; slower when close to something
         theta = best * 2 * np.pi / self.n_directions
         shift = scores[best][2]
         free_now = free_distance(points, theta, self.half_length, self.half_width, self.side_margin)   # unshifted
@@ -412,6 +520,8 @@ class ObstacleCourseNode(Node):
         side_speed = np.clip(2.0 * shift, -0.15, 0.15)                 # positive = to the left of theta
         vx = along_speed * np.cos(theta) - side_speed * np.sin(theta)
         vy = along_speed * np.sin(theta) + side_speed * np.cos(theta)
+        if stop_at is not None:                                        # a (possible) pendulum line ahead: stop at its edge
+            vx = min(vx, max(0.0, 3.0 * (stop_at - front - self.standoff)))
         total = np.hypot(vx, vy)
         if total > self.speed:                                         # keep the total speed at most 0.3 m/s
             vx, vy = vx * self.speed / total, vy * self.speed / total
