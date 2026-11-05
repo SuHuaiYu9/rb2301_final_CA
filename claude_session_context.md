@@ -20,7 +20,13 @@ It lives on branch `claude/final-project-review-3m8r3v` (with the report log and
 
 ## 0. First steps in a new chat or after a context reset
 1. **Read this whole file, then `rb2301_final_report_log.md` and `claude_tools/README.md`.**
-2. **Make sure your branch has these files.** Your session's designated branch may differ from `claude/final-project-review-3m8r3v`. If it does, start it from the Claude branch so the log, this file and the tools carry over:
+2. **Make sure your branch has these files.**
+   - **On the user's own machine** (Claude desktop app, working directory `~/Downloads/rb2301_final_project-main`): that folder is the user's, and it must stay on `main`. The user works only on `main` and wants no other local branches. **Never `git checkout` or create branches in it.** Instead, clone the Claude branch into the scratchpad and do all log, context and tools work there:
+     ```bash
+     git clone -q --branch claude/final-project-review-3m8r3v git@github.com:SuHuaiYu9/rb2301_final_CA.git "$SP/claude_branch"
+     ```
+     (2026-11-05: a session checked out the Claude branch in the user's folder, which confused them; it was switched back to `main` and the local branch copy deleted.)
+   - **In a cloud session,** your designated branch may differ from `claude/final-project-review-3m8r3v`. If it does, start it from the Claude branch so the log, this file and the tools carry over:
    ```bash
    git fetch origin claude/final-project-review-3m8r3v && git checkout -B <your-designated-branch> origin/claude/final-project-review-3m8r3v
    ```
@@ -36,7 +42,7 @@ It lives on branch `claude/final-project-review-3m8r3v` (with the report log and
 6. **Continue from section 00 (current task),** using section 2 for the state of things.
 
 ## 0b. How to update the report log (whenever the user says "log this")
-- **File:** `/home/user/rb2301_final_CA/rb2301_final_report_log.md`, on branch `claude/final-project-review-3m8r3v`.
+- **File:** `rb2301_final_report_log.md` in your clone of branch `claude/final-project-review-3m8r3v` (`$SP/claude_branch/` on the user's machine; `/home/user/rb2301_final_CA/` in the old cloud session).
 - **Entry types:**
   - `D#` = a decision the user made;
   - `M#` = a problem or mistake observed;

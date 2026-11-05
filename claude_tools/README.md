@@ -49,6 +49,8 @@ Every script:
   ```
 - A reactive version with no door x or goal won't need this, so adapt the script instead.
 
+On the user's machine, run the scripts with `/usr/bin/python3`: the miniconda `python3` on the PATH there has no numpy.
+
 Example:
 ```bash
 cd claude_tools/harness && python3 drive_timed.py "$SP/user_repo/src/rb2301_fp/rb2301_fp" ../sim 30 0
