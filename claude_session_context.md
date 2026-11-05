@@ -1,27 +1,12 @@
 # Claude session context: RB2301 final project (read this first in a new chat or after a context reset)
 
 Saved 2026-11-03, last updated 2026-11-05. It lets work continue seamlessly after context compaction **or in a new chat**.
-It lives on branch `claude/final-project-review-3m8r3v` (with the report log and `claude_tools/`). The user's own code is on `main`, which Claude must never change.
+It lives on branch `claude/final-project-review-3m8r3v` (with the report log and `claude_tools/`), **for version 1 only** (section 00). The user's own code is on `main`, which Claude must never change.
 
-## 00. Current task (from 2026-11-05, a new chat started for it)
-- **Goal:** help the user create a **new version of the code**, based on the current codebase (`main` at `676268b`, which ran the full course in Gazebo: S1 in the log), using a different approach: **no hard-coded door x-value and no hard-coded global goal.**
-- **Why, in the user's words:** "the prof just said that he would prefer if the whole project is reactive instead of harcoded."
-- **The user designs the new approach; Claude translates it into code.** All the ground rules in section 1 still apply.
-  - The user hasn't described the new approach yet, so **don't propose one. Ask for or wait for their plan.**
-  - Critique their logic only if they explicitly ask.
-- **Where the new version lives (the user decided, 2026-11-05):** a new file **`src/rb2301_fp/rb2301_fp/obstacle_course2.py` on `main`**. The old `obstacle_course.py` stays as the version that achieved S1. When the user says "check it", look at `obstacle_course2.py` on `main`. It wasn't pushed yet when the old chat ended. Claude never edits `main` or the user's files.
-  - **Running it:** `./fp.sh` runs `ros2 run rb2301_fp obstacle_course`, which `src/rb2301_fp/setup.py` maps to `rb2301_fp.obstacle_course:main`, so **`./fp.sh` still runs the OLD file.** The new file runs only by calling it directly (`python3 src/rb2301_fp/rb2301_fp/obstacle_course2.py` after `source install/setup.bash`, if it keeps the `if __name__ == '__main__': main()` ending), or after the user adds an entry point to `setup.py` and rebuilds. The old chat told the user this; changing `setup.py` or `fp.sh` is their decision.
-  - **Testing it with `claude_tools/`:** the harness does `import obstacle_course`. Copy the new file under that name into a scratch folder and pass that folder as `<code_dir>`:
-    ```bash
-    mkdir -p "$SP/v2" && cp "$SP/user_repo/src/rb2301_fp/rb2301_fp/obstacle_course2.py" "$SP/v2/obstacle_course.py" && cp "$SP/user_repo/src/rb2301_fp/rb2301_fp/optitrack_variables.config" "$SP/v2/"
-    ```
-- **Hard-coded values in the current code, for reference only** (a list of facts, not advice; the user named only the door x and the goal):
-  - `self.global_goal`: used for the distance in `select_target` / `select_target2`, and for the stop at the goal after the door;
-  - `self.door_x` = 3.4 (Gazebo), and `cx >= 2.9` in the real branch: switch to the after-door logic;
-  - `self.origin` with `map_size_x` / `map_size_y` (6.02 × 4.5 m): where the grid sits;
-  - LiDAR offsets 0.114 (Gazebo) and 0.045 (real); centre offset 0.0725;
-  - after the door: the 0.25 m clearance, the front quarters `last_scan[:91]` and `last_scan[270:]`, and `move_2D(0.5, 0, 0)`.
-- **The old chat** (session `01VT1WaLnxVP53q3RnFi24Uu`) handed over to the new chat. Only the new chat updates the report log from now on.
+## 00. Current task (updated 2026-11-05: version 1 only on this branch)
+- **This branch is for version 1 only:** the original code, `src/rb2301_fp/rb2301_fp/obstacle_course.py` on `main` (last checked at `676268b`). The old chat (session `01VT1WaLnxVP53q3RnFi24Uu`) is **still in use** and keeps logging here, continuing at D12, M4, R2, E2, S2 (section 0b).
+- **The earlier handover note is cancelled.** A new chat was started for version 2, but the user still uses the old chat for version 1.
+- **Version 2** (the reactive code: no hard-coded door x or global goal, in a new file `obstacle_course2.py`) is handled by a different chat. It logs on branch `claude/reactive-version` with a `V2-` prefix (V2-D1, ...). That log starts with a copy of this one as of commit `329a919`. **Don't log version 2 here, and never push to `claude/reactive-version`.**
 
 ## 0. First steps in a new chat or after a context reset
 1. **Read this whole file, then `rb2301_final_report_log.md` and `claude_tools/README.md`.**
