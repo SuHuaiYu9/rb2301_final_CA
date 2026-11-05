@@ -40,7 +40,7 @@ Saved 2026-11-03, last updated 2026-11-05. It lets work continue seamlessly afte
    cd "$SP/user_repo" && git fetch -q --depth 10 origin main && git checkout -q FETCH_HEAD && git log --oneline -3   # each "check it"
    ```
    The user may also create their own branch for the new version. If they say "check it", ask which branch if it isn't `main`.
-4. **Test tools:** `claude_tools/` (2D simulator and test scripts; see its README). Previous sessions' scratchpad copies are gone; don't refer to them.
+4. **Test tools:** `claude_tools/` (2D simulator and test scripts; see its README). Previous sessions' scratchpad copies are gone; don't refer to them. **The scratchpad can be wiped in the middle of a session** (it happened on 2026-11-05): if a clone is missing, clone it again; push anything worth keeping.
 5. **Re-read section 1 (ground rules)** before answering. The most common way to upset this user is giving advice they didn't ask for.
 6. **Continue from section 00 (current task),** using section 2 for the state of things.
 
@@ -97,7 +97,11 @@ Saved 2026-11-03, last updated 2026-11-05. It lets work continue seamlessly afte
 - **Dynamic obstacles:** handled in Gazebo by D10 (stop and wait). The user's first idea, comparing grids, got an evidence-based critique (logged under D10) and was dropped.
 - **Critique permission:** the user allowed high-level critique for ONE question ("you are allowed to give high-level logic critique now"). The default rule (section 1) still applies.
 - **Last thing discussed (2026-11-05):** D9–D11 and S1 were logged and pushed. Then the user started a new chat to build the reactive version (section 00). The goal-stop bug and E1 are still open in the current code.
-- **In this chat (2026-11-05):** the user created `obstacle_course2.py` for version 2 (not yet pushed when this was written). The version 1 / version 2 branch split was set up (section 00). The user hasn't described the reactive approach yet.
+- **In this chat (2026-11-05):** the version 1 / version 2 branch split was set up (section 00). Version 2 progress on `main`:
+  - `d5accb8` / `c6662ef`: `obstacle_course2.py` = `676268b` plus the user's plan comments. Run it with an entry point `obstacle_course2` in `setup.py` (user's call) or `/usr/bin/python3 src/rb2301_fp/rb2301_fp/obstacle_course2.py`.
+  - `745bf6f`: `select_target3` (Claude wrote it to the user's spec): score = A·right + B·front + C·unknown-neighbours, signed distances along the heading from the robot centre, metres, A = B = 1, C = 0.01 placeholder, argmax over seen free cells outside the buffer. Used in both Gazebo calls; the real branch still uses `select_target2` / `select_target`. User: Gazebo run "everything looks good".
+  - Next (code handed over, not yet pushed when this was written): dynamic-state detection. Window fixed in the world = cells 0–0.2 m ahead of the centre along the heading, 1 m wide (`window_cells` helper); every `compare_every` = 4 callbacks, count saved window cells that went 99 → 0; ≥ `dynamic_threshold` → `self.dynamic_state = True` for good. In that state: stop if any `last_scan[:91]` / `last_scan[270:]` reading ≤ 0.22, else `move_2D(self.pursuit_speed, 0, 0)`. Replaces the `passed_door` block and the `cx >= door_x` branch (no goal stop any more).
+  - Threshold placeholder 25, from `dyn_freed_study.py` (2D, 7 layouts): max freed per comparison with no swinging obstacles 9–75; near swinging obstacles 24–111. Threshold 25 triggers in 3/7 no-swinger runs and 6/7 swinger runs; no value separates them in that test.
 - **About the user:** casual and blunt (swears), learns by doing. Sometimes sends code as screenshots, sometimes pushes to `main` and says "check it". If they say "check" without attaching code, look on GitHub `main`.
 
 ## 3. Version 1 algorithm, the starting point for version 2 (`src/rb2301_fp/rb2301_fp/obstacle_course.py` on `main`, commit `676268b`)

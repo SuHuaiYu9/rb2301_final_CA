@@ -38,6 +38,7 @@ Every script:
 | `real_mode_run_phi.py`, `real_timed.py` | `<code_dir> <sim_dir> <secs> <phi_deg>` | Real-robot mode: 720-reading scans, and maze-frame poses starting at (2.82, 2.94), with the course rotated by phi. Needs `optitrack_variables.config` next to `obstacle_course.py` (it's in the user's package folder) |
 | `target_study.py` | `<code_dir> <sim_dir> <secs> <seed> <frontier\|nearest_free>` | Runs until the robot passes the door, gets stuck (moves under 5 cm in 15 s) or times out. Prints contacts and the last target |
 | `diff_study.py`, `diff_study2.py` | `<code_dir> <sim_dir> <seed>` | Cells that change between consecutive grids, on static walls vs swinging obstacles, with the robot still vs moving |
+| `dyn_freed_study.py` | `<code_dir> <sim_dir> <secs> <seed> <swing\|noswing> [door]` | Version 2: how many cells in the detection window go 99 → 0 at each comparison, with detection switched off. Needs a copy of the code with `window_cells` / `prev_window` / `dynamic_threshold` (the 2026-11-05 snippets). `door` starts the robot just past the door |
 | `blob_track.py` | `<code_dir> <sim_dir> <seed>` | Speed of each swinging obstacle estimated from the centre of its occupied cells, from a standing robot |
 
 **`target_study.py` needs some setup:**
