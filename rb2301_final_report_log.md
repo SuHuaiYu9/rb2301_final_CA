@@ -195,4 +195,23 @@ Pure pursuit with the robot treated as a point that can move in any direction: e
 - **Why (the user's words):** "the prof just said that he would prefer if the whole project is reactive instead of harcoded."
 - Entries are numbered V2-D#, V2-M#, V2-R#, V2-E#, V2-S#.
 
-*(No version 2 entries yet.)*
+## V2-M1: The dynamic state switches on before any swinging obstacle is seen (Gazebo) (2026-11-05)
+- **Setup (commit `27822e7`):** dynamic-obstacle detection. Every `compare_every` = 4 timer callbacks, the grid cells saved at the last comparison are checked again. These cells form a window fixed in the world: 0–0.2 m ahead of the robot centre along the heading, 1 m wide. If `dynamic_threshold` = 25 or more of them have gone from occupied (99) to free (0), `dynamic_state` becomes true. In that state the robot drives straight forward, and stops while anything in the front quadrants is within 0.22 m. The threshold 25 was a placeholder from a 2D test: per comparison, up to 9–75 cells were freed with no swinging obstacles and up to 24–111 near them, and no single value separated the two.
+- **Observed (Gazebo):** the dynamic state switches on very early and very often, before the swinging obstacles are seen at all. Many cells change from occupied to free.
+- **Why (2D test: 7 layouts, swinging obstacles removed, detection switched off so it only counts, 40 s each):**
+  - **Standing still:** 0 cells freed per comparison in every layout.
+  - **Moving:** up to 9–67 cells freed per comparison, and 25 or more in 3 of the 7 layouts.
+  - **Where:** 85–100% of the freed cells were within 1.5 cm of a real wall or obstacle surface. So they are static surfaces, not sensor noise (the Gazebo LiDAR noise is set to 0).
+  1. **The viewing angle changes.** A hit marks the whole 1 cm cell it lands in, and most surface cells lie partly in front of the surface. From a few centimetres further on, a ray at a slightly different angle passes through the front part of that cell and hits the surface in the next cell. Every cell before a hit is set to free, and scans are allowed to clear occupied cells (D8), so the cell flips from 99 to 0.
+  2. **The same scan is used twice.** A scan arrives every 2nd tick, but the grid is updated from `last_scan` every tick, using the newer pose. At 0.3 m/s the hit points move about 1.5 cm deeper into the surface, so the previous hit cells are freed. Roughly half or more of the freed cells were freed on these in-between ticks. With a new scan every tick the counts were about the same (up to 11–74 per comparison), so cause 1 alone is enough.
+  - **Why surfaces are in the window:** a 1 m wide window contains wall cells whenever the robot is within 0.5 m of a side wall, or within 0.2 m of anything ahead.
+  - **Not tested (Gazebo only):** the 2 cm gaps between wall panels, and the pose used for a scan being the latest odometry rather than the pose when the scan was taken.
+  - **Related:** version 1's dropped grid-comparison idea (D10) saw the same effect: 200–280 wall cells changed per scan while the robot moved.
+- **Tried (commit `af71c1b`):** a false alarm. In the user's words: the robot waits in place for a while, because its front quadrants are blocked most of the time, and "if the window does not change sufficiently in the time that the robot is still, it knows it is a false alarm and go back to dynamic_state = False". In the code, on every tick with the front blocked: stop; count the saved window cells that went 99 → 0; if 5 or fewer, `dynamic_state = False`; then save a new window. Also changed: `window_width` 0.5, `compare_every` 2, `dynamic_threshold` 15. Gazebo branch only.
+  - **Code check (2D trace):** the decision is made on the first blocked tick, not after a wait.
+    - The window is saved again on every blocked tick, so each check covers only the last tick.
+    - The first blocked tick compares against a window saved when the state switched on, possibly far behind. In one trace, it was 29 ticks earlier, while the robot was driving.
+    - If the front is blocked on the tick the state switches on, the window was saved earlier in that same tick, so 0 cells are freed and the state switches off in that tick.
+    - On ticks with no new scan, a still robot's grid doesn't change, so the count is 0.
+- **Fix:**
+

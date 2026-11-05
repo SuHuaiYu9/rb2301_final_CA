@@ -53,7 +53,7 @@ Saved 2026-11-03, last updated 2026-11-05. It lets work continue seamlessly afte
   - `R#` = a real-robot run;
   - `E#` = an error or crash;
   - `S#` = a milestone or success.
-  Version 2 entries use a **`V2-` prefix** so they never clash with version 1 numbers. Next free numbers: **V2-D1, V2-M1, V2-R1, V2-E1, V2-S1**.
+  Version 2 entries use a **`V2-` prefix** so they never clash with version 1 numbers. Next free numbers: **V2-D1, V2-M2, V2-R1, V2-E1, V2-S1**.
 - **Fields:** Decision/Observed, Why, Potential errors (only if they ask), Observed, Fix. Leave Fix blank unless they say what they did. Add a "Later:" line to an older entry when a value changes, as with D5.
 - **Record the user's own remarks for the report faithfully,** as with R1's "Remark for the report".
 - **Commit and push:** `git add rb2301_final_report_log.md && git commit -m "Log ..."` with the trailer lines **your own session's** system prompt gives (Co-Authored-By, plus your own Claude-Session URL, not the old one). Then push to your branch (section 0, step 2). Push access works.
@@ -103,6 +103,7 @@ Saved 2026-11-03, last updated 2026-11-05. It lets work continue seamlessly afte
   - Next (code handed over, not yet pushed when this was written): dynamic-state detection. Window fixed in the world = cells 0–0.2 m ahead of the centre along the heading, 1 m wide (`window_cells` helper); every `compare_every` = 4 callbacks, count saved window cells that went 99 → 0; ≥ `dynamic_threshold` → `self.dynamic_state = True` for good. In that state: stop if any `last_scan[:91]` / `last_scan[270:]` reading ≤ 0.22, else `move_2D(self.pursuit_speed, 0, 0)`. Replaces the `passed_door` block and the `cx >= door_x` branch (no goal stop any more).
   - Threshold placeholder 25, from `dyn_freed_study.py` (2D, 7 layouts): max freed per comparison with no swinging obstacles 9–75; near swinging obstacles 24–111. Threshold 25 triggers in 3/7 no-swinger runs and 6/7 swinger runs; no value separates them in that test.
   - **Why static cells trip it** (user asked "why?" after Gazebo triggered the dynamic state early and often; `dyn_why_study.py`, 2D, 7 layouts, no swinging obstacles): standing still frees 0 cells; moving, 85–100% of freed cells are within 1.5 cm of a real wall or obstacle surface. Surface cells flip 99 → 0 because rays from a new viewpoint cross a cell that an earlier ray marked as the hit cell (D8 lets scans clear 99), and because each scan is reapplied on the next tick from a pose ~1.5 cm further on (scans every 2nd tick). With a fresh scan every tick the counts were about the same (max 11–74), so the viewpoint effect alone is enough. Gazebo-specific extras (2 cm panel gaps, pose vs scan timing) unverified. No fix proposed (not asked).
+  - `af71c1b` (user): false alarm. In the dynamic state, on every blocked tick: stop, count freed cells in `prev_window`, ≤ 5 → `dynamic_state = False`, then re-save the window. Also `window_width` 0.5, `compare_every` 2, `dynamic_threshold` 15; the real branch's pure pursuit is now inside the `else:` (indentation bug fixed). Code check: it decides on the FIRST blocked tick, comparing against a window saved one tick earlier or at switch-on, and can switch off in the same tick it switched on. The user wanted a wait while still. Reported; waiting for the length of "a while".
 - **About the user:** casual and blunt (swears), learns by doing. Sometimes sends code as screenshots, sometimes pushes to `main` and says "check it". If they say "check" without attaching code, look on GitHub `main`.
 
 ## 3. Version 1 algorithm, the starting point for version 2 (`src/rb2301_fp/rb2301_fp/obstacle_course.py` on `main`, commit `676268b`)
@@ -226,4 +227,4 @@ Entries:
 
 Most "Fix" fields are blank for the user to fill in.
 
-**Version 2 entries** (under "Version 2 (reactive) starts here"): none yet.
+**Version 2 entries** (under "Version 2 (reactive) starts here"): **V2-M1** the dynamic state switching on early (why: static surface cells flip while moving), with the user's false-alarm attempt (`af71c1b`) and its code check. Offered and unanswered: V2-D entries for `select_target3` and the detection design.
