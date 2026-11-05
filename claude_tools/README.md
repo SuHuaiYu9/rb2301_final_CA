@@ -41,6 +41,8 @@ Every script:
 | `dyn_freed_study.py` | `<code_dir> <sim_dir> <secs> <seed> <swing\|noswing> [door]` | Version 2: how many cells in the detection window go 99 → 0 at each comparison, with detection switched off. Needs a copy of the code with `window_cells` / `prev_window` / `dynamic_threshold` (the 2026-11-05 snippets). `door` starts the robot just past the door |
 | `dyn_why_study.py` | `<code_dir> <sim_dir> <secs> <seed> <base\|fresh\|still>` | Version 2, no swinging obstacles: freed cells per comparison, split by fresh-scan vs stale-scan ticks and by distance from a real surface. `fresh` = a new scan every tick, `still` = robot never moves |
 | `dyn_robust_study.py` | `<code_dir> <sim_dir> <secs> <seed> <start\|door\|wall> <lidar_noise_m> <pose_jitter_m> <move\|still> <grid_res_m> [dump.json]` | Version 2: the user's grid-window count vs a scan-based "seen-through" count (old LiDAR points the next scan sees more than 10 cm past, checking the ray and its 2 neighbours, 1 m ahead × ±0.5 m), with noise. `wall` = standing 0.15 m from a wall. The dump holds per-comparison and per-scan-pair counts with a swinger-ahead flag |
+| `reactive_study.py` | `<code_dir> <sim_dir> <secs> <seed> <gazebo\|real\|none> <lidar_noise_m> <pose_jitter_m>` | Runs a reactive (no-grid) node through one layout: GOAL / STUCK / TIMEOUT (with `none`: THROUGH = got 0.4 m past the door), where it ended, static and pendulum contacts, time spent waiting. `real` = pendulums held at one side, released when the robot nears the door |
+| `real_timed_nogrid.py` | `<code_dir> <sim_dir> <secs> <phi_deg>` | `real_timed.py` for code without an occupancy grid |
 | `blob_track.py` | `<code_dir> <sim_dir> <seed>` | Speed of each swinging obstacle estimated from the centre of its occupied cells, from a standing robot |
 
 **`target_study.py` needs some setup:**
@@ -58,5 +60,7 @@ Example:
 ```bash
 cd claude_tools/harness && python3 drive_timed.py "$SP/user_repo/src/rb2301_fp/rb2301_fp" ../sim 30 0
 ```
+
+`reference/obstacle_course_reactive.py`: the direction-scoring reactive version Claude wrote at the user's request on 2026-11-05 (template + new code only; the user implements their own copy). Not the rejected navigator.
 
 Claude's own navigator (`course_navigator.py` / `nav.py`) is deliberately **not** included. The user rejected it, so never suggest it.
