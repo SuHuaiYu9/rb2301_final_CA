@@ -321,16 +321,15 @@ class ObstacleCourseNode(Node):
                     if cx>=self.door_x: #will this change in the real course??????????
                         print(f"passed door,{self.pose[0]}")
                         self.passed_door = True
-                        self.target = select_target2(buffered,self.occupancy_grid,self.global_goal,self.occupancy_grid_resolution,
-                                                    self.origin)
+                        self.target = select_target3(buffered, self.occupancy_grid, cx, cy, heading, self.occupancy_grid_resolution, self.origin)
                         self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
                                     (self.target[0], self.target[1]))
                         if not self.path:
                             self.get_logger().info('no path found bro')
                     else:
                         # self.target = select_target(frontier, self.global_goal,self.origin,self.occupancy_grid_resolution)
-                        self.target = select_target2(buffered,self.occupancy_grid,self.global_goal,self.occupancy_grid_resolution,
-                                                     self.origin)
+                        #self.target = select_target2(buffered,self.occupancy_grid,self.global_goal,self.occupancy_grid_resolution,self.origin)
+                        self.target = select_target3(buffered, self.occupancy_grid, cx, cy, heading, self.occupancy_grid_resolution, self.origin)
                         self.path = A_star(buffered,world_to_grid(cx,cy,self.origin,self.occupancy_grid_resolution),
                                     (self.target[0], self.target[1]))
                         if not self.path:
@@ -415,7 +414,29 @@ class ObstacleCourseNode(Node):
             else:
                 self.move_2D(0.0, 0.0, 0.0)    # no path to follow
             
-        
+
+def select_target3(buffered, raw, cx, cy, heading, occupancy_grid_resolution, origin, A=1.0, B=1.0, C=0.01):
+    '''Weighted score, no global goal: score = A*(right distance) + B*(front distance) + C*(unknown neighbours).
+    right/front are measured in metres from the robot centre (cx, cy), along the robot's heading (radians).
+    Cells to the left of or behind the robot get negative distances. Only seen, free cells outside the buffer
+    can be targets. Returns the (i, j) grid cell with the highest score.'''
+    free_known = ~buffered & (raw == 0)
+    fi, fj = np.nonzero(free_known)
+    #world coordinates of each candidate cell's centre
+    x = origin[0] + (fi + 0.5) * occupancy_grid_resolution
+    y = origin[1] + (fj + 0.5) * occupancy_grid_resolution
+    dx, dy = x - cx, y - cy
+    front = dx * np.cos(heading) + dy * np.sin(heading)     # along the heading
+    right = dx * np.sin(heading) - dy * np.cos(heading)     # 90 deg clockwise from the heading
+    #number of unknown (-1) cells among each cell's 8 neighbours (outside the grid counts as not unknown)
+    unknown = np.pad(raw == -1, 1).astype(np.int8)
+    n, m = raw.shape
+    n_unknown = sum(unknown[1 + di : n + 1 + di, 1 + dj : m + 1 + dj]
+                    for di in (-1, 0, 1) for dj in (-1, 0, 1) if (di, dj) != (0, 0))
+    score = A * right + B * front + C * n_unknown[fi, fj]
+    k = np.argmax(score)
+    target = (fi[k], fj[k]) #the goal A* plans a path towards
+    return target
 
 def select_target2(buffered, raw, global_goal,occupancy_grid_resolution,origin):
 #fuck i need a grid that shows unoccupied cells as 0 but the obstacles must be expanded as well. i have buffered that shows every occupied 
