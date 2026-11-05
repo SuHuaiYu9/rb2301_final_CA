@@ -1,16 +1,3 @@
-'''2nd option'''
-'''
-weighted score for which free cell to explore (without a global goal): 
-- distance to the right of the robot, distance in front of the robot, and number of unknown cells neighbouring it
-- give equal weights to right and front distance, use number of unknown neighbours as tiebreaker so lower weight for this
-
-detect change in costmap in front of the robot from occupied to 0 to distinguish whether dynamic obstacles have appeared
-- if yes, switch to a state representing dynamic obstacles
-- in this state, use the front-left and front-right quadrant checks. if the front-left and front-right quadrant scans dont change 
-after 2 timer callbacks, it is a false alarm so move forward. 
-'''
-
-
 import argparse
 import configparser
 import math
@@ -26,6 +13,19 @@ from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
 import heapq
 import math
+
+'''2nd option'''
+'''
+weighted score for which free cell to explore (without a global goal): 
+- distance to the right of the robot, distance in front of the robot, and number of unknown cells neighbouring it
+- give equal weights to right and front distance, use number of unknown neighbours as tiebreaker so lower weight for this
+
+detect change in costmap in front of the robot from occupied to 0 to distinguish whether dynamic obstacles have appeared
+- if yes, switch to a state representing dynamic obstacles
+- in this state, use the front-left and front-right quadrant checks. if the front-left and front-right quadrant scans dont change 
+after 2 timer callbacks, it is a false alarm so move forward. 
+'''
+
 
 #my one
 np.set_printoptions(2, suppress=True, threshold=np.inf) # Print numpy arrays to specified d.p., suppress scientific notation and do not truncate
@@ -117,7 +117,7 @@ class ObstacleCourseNode(Node):
             self.origin = (-0.5, -3.3) #this anchors the occupancy grid, its alw the "bottom left" corner of the occupancy grid
             self.global_goal = (4.7,-3.5) 
             self.robot_length = 0.22
-            self.robot_width = 0.21
+            self.robot_width = 0.24
             self.lookahead_distance = 0.05
             self.pursuit_speed = 0.3 #can tune based on curvature of lookahead arc
             self.goal_tolerance = 0.05
@@ -292,7 +292,7 @@ class ObstacleCourseNode(Node):
             #now we done with building the occupancy grid
             occ = (self.occupancy_grid == 99)                     # rebuild from the raw grid every time
             #should the below 3 arrays be variables or object attributes? for eg: self.buffered instead
-            buffered = inflate_square(occ, round((self.robot_length/2)/self.occupancy_grid_resolution))      # 8 cells x 2 cm = 0.16 m, buffered is the grid to use for traversal
+            buffered = inflate_square(occ, round((self.robot_length/2)/self.occupancy_grid_resolution),round((self.robot_width/2)/self.occupancy_grid_resolution))      # 8 cells x 2 cm = 0.16 m, buffered is the grid to use for traversal
             frontier = frontier_cells(buffered, self.occupancy_grid)
             
 
@@ -383,7 +383,7 @@ class ObstacleCourseNode(Node):
             #now we done with building the occupancy grid
             occ = (self.occupancy_grid == 99)                     # rebuild from the raw grid every time
             #should the below 3 arrays be variables or object attributes? for eg: self.buffered instead
-            buffered = inflate_square(occ, round((self.robot_length/2)/self.occupancy_grid_resolution))      # 8 cells x 2 cm = 0.16 m, buffered is the grid to use for traversal
+            buffered = inflate_square(occ, round((self.robot_length/2)/self.occupancy_grid_resolution),round((self.robot_width/2)/self.occupancy_grid_resolution))      # 8 cells x 2 cm = 0.16 m, buffered is the grid to use for traversal
             frontier = frontier_cells(buffered, self.occupancy_grid)
             #what if we replan A* on every other callback?
             if self.counter%2:
@@ -415,12 +415,7 @@ class ObstacleCourseNode(Node):
             else:
                 self.move_2D(0.0, 0.0, 0.0)    # no path to follow
             
-
-
-def select_target3(buffered,raw,robot_center):
-    #weighted score function: score = A(right-distance from robot)+ B(front-distance from robot) + C(number of neighbouring unknown cells)
-    right_distance = 
-    
+        
 
 def select_target2(buffered, raw, global_goal,occupancy_grid_resolution,origin):
 #fuck i need a grid that shows unoccupied cells as 0 but the obstacles must be expanded as well. i have buffered that shows every occupied 
@@ -478,14 +473,14 @@ def frontier_cells(buffered,raw):
     frontier = output & free
     return frontier
 
-def inflate_square(occ, r):
+def inflate_square(occ, length,width):
     '''occ: bool array, True = occupied. Returns occ grown by r cells in every direction (a square).'''
     out = occ.copy()
-    for k in range(1, r + 1):          # pass 1: grow along axis 0
+    for k in range(1, length + 1):          # pass 1: grow along axis 0
         out[k:, :]  |= occ[:-k, :]     #   copy shifted down by k
         out[:-k, :] |= occ[k:, :]      #   copy shifted up by k
     tmp = out.copy()
-    for k in range(1, r + 1):          # pass 2: grow that result along axis 1
+    for k in range(1, width + 1):          # pass 2: grow that result along axis 1
         out[:, k:]  |= tmp[:, :-k]
         out[:, :-k] |= tmp[:, k:]
     return out
