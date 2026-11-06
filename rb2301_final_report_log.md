@@ -435,3 +435,39 @@ With wide swings, the rest were still waiting when the 4-minute test ended (some
 - **Fix (commit `ea7efd4`):** grow only towards the motion: `x_lo, x_hi = cx - L - (step if c < 0), cx + L + (step if c > 0)`, the same for y, with a 1e-9 tolerance for cos/sin ≈ 0.
   - **Corner test:** with both walls 2–5 mm away, all of 90°–180° are feasible.
   - **2D harness, 21 layouts, 60 s:** 21/21 through with an exact LiDAR and with 1 cm noise. No "nothing feasible" stops. Contacts: 2 runs (5 ticks) exact, 1 run (10 ticks) noisy.
+
+## V2-D3: Room bonus: look past the feasibility distance, up to 1 m (own code, commit `b6ac3e0`) (2026-11-07)
+- **Decision:** add `room_score = w_free * free_distance(...)` to each direction's score, with `w_free` = 1.0. `free_distance` uses the same stepped rectangles as `blocked()`, but keeps stepping out to 1 m and returns the last clear distance. Feasibility is unchanged: `blocked()` with `test_distance`.
+- **Why (user's words):** "i noticed that the robot takes very long to 'bounce out' of deadends/corners, so adding this bonus room score would help to tip the balance towards unfavourable directions such as left and backwards. it would also help the robot go through the gap towards dynamic obstacles i believe." Claude had suggested it as the highest-value step, because cutting Claude's reference down to a 15 cm look-ahead took it from 21/21 to 13/21. The user put lane shifts on hold ("im not very sure how much i really need this lane shift thing").
+- **Same commit:** `test_distance` 0.10 is used for feasibility, the commitment, the path check and the proximity spot; separate sim and real attribute blocks, with the sim robot at its Gazebo size (half 0.1075 × 0.095 m, LiDAR 0.041 m ahead of the centre).
+- **Observed (Gazebo):** "the robot still bounces for a very long time in top right corners and deadends before exiting".
+- **2D harness** (Gazebo-size robot, 21 layouts, no pendulums, 90 s): 20/21, mean 28.4 s, slowest 57.3 s, 3.8 turn-backs per run. A turn-back is a decision that reverses the direction by 135° or more.
+
+## V2-D4: Hysteresis on the chosen direction (own code, commits `4d3f96f`, `8fbfe1b`, `78f31fe`) (2026-11-06 to 07)
+- **Decision:** keep the current direction while it's feasible, unless the new best score beats it by more than 0.2. The user put the room bonus on hold at first: "i think my code could work if i just add a hysteresis control."
+- **Bug (`4d3f96f`):** `best_thetas, best_score, goal_score, proximity_score, best_score = theta, score, ..., best_score` lists `best_score` twice, so it was set back to −inf. Every direction then passed `score > best_score`, and the last feasible one in the list always won, so the robot drove backwards. The user fixed it themselves, then used Claude's shorter version of the block (`8fbfe1b`).
+- **First version (`8fbfe1b`):** compared the new best with the score the old direction had *when it was chosen*. Harness: 20/21 with it against 21/21 without, mean 30.1 s both.
+- **Change (`78f31fe`):** compare with the old direction's score *now*. `best_direction` returns every feasible direction's score in a dict, and the check is `new_score <= scores[self.last_best_theta] + 0.2`.
+  - **Why:** the room score shrinks as the robot nears a wall, so the stored score stays too high. The robot kept going until the direction was blocked, then rebounded.
+  - The first push used `scores[self.last_best_score]` and crashed with a `KeyError` (the dict is keyed by direction). Fixed in `e390b2d`.
+  - The same commit raised the sim `visited_weight` from 0.1 to 0.2.
+  - **Harness, with the fix:** 21/21; mean 26.2 s exact LiDAR, 26.8 s with 1 cm noise; slowest 41.6 s and 46.8 s; 0.4 and 0.7 turn-backs per run. Before (`b6ac3e0`): 28.4 s, 57.3 s, 3.8.
+
+## V2-D5: Novelty bonus as well as the proximity penalty (own code, commit `e390b2d`) (2026-11-07)
+- **Decision:** add `novelty_score = w_new * min(1, nearest visited point / probe)`, judged at the point `min(probe, free)` along each direction, with `w_new` = 1.5 and `probe` = 0.4 m. Visited points include the current position, so a direction blocked soon gets low novelty.
+- **Why:**
+  - **Observed:** still bouncing "in the top right corner and in tight pockets".
+  - **Claude's explanation:** the goal (front-right) points into a top-right corner, a 2.0 goal gap against going back-left. The room score closes only about 0.7–0.9 of it, and one pass adds only about 1 of proximity penalty, so the robot has to re-enter the corner once or twice before leaving. Novelty takes away up to 1.5 from every direction into an already-visited corner after a single visit.
+- **User's question 1:** "why dont we just increase the weight of the visited proximity score?" Harness, proximity weight only, no novelty:
+
+  | `visited_weight` | through (exact / noisy) | mean time | slowest | turn-backs |
+  |---|---|---|---|---|
+  | 0.1 | 20 / 21 | 28.4 / 30.2 s | 57 / 55 s | 3.8 / 3.6 |
+  | 0.3 | 21 / 21 | 29.8 / 31.3 s | 59 / 82 s | 0.3 / 0.8 |
+  | 1.0 | 20 / 20 | 31.4 / 29.9 s | 61 / 60 s | 0.4 / 0.5 |
+  | 3.0 | 15 / 20 | 33.6 / 38.9 s | 66 / 78 s | 0.8 / 1.2 |
+  | 0.1 + novelty | 21 / 21 | 26.8 / 27.6 s | 39 / 41 s | 0.3 / 0.8 |
+
+  A heavier penalty stops the turning back but is slower. It has no upper limit, so it also blocks the way back out of a dead end, and it only sees the next 10 cm. Novelty is capped at 1.5 and judged up to 40 cm out.
+- **User's question 2:** "why dont we just have a novelty score then, and dont use the proximity score anymore?" Harness, novelty with proximity 0.2 against novelty only: 21/21 (24.8 / 25.1 s) against **17/21 and 19/21**. The failed runs rocked between two spots for the full 90 s (170–240 turn-backs). Novelty bottoms out at 0 once everything nearby is visited, so it can't tell "once" from "100 times". The growing proximity penalty is what guarantees the robot eventually leaves. Claude's reference uses both for the same reason (V2-REF, P5).
+- **Result (`e390b2d`, harness):** 21/21; mean 24.8 s exact, 25.1 s noisy; slowest 38.0 s and 49.0 s; 0.3 and 0.7 turn-backs per run; no contacts. Claude's reference in the same test: 24.1 s mean, 37.7 s slowest.
