@@ -55,6 +55,12 @@ Saved 2026-11-03, last updated 2026-11-06 (just before a context compaction the 
   - `8fbfe1b`: fixed. The user said they had fixed it themselves but used Claude's version of the hysteresis block because it's shorter and more readable. `visited_weight` is 0.1. The printed goal and proximity scores are still the last direction's (print only).
     Harness on 21 layouts: with hysteresis 20/21 (seed 4 ends at (3.42, -3.13) at 60 s), mean 30.1 s, max 51.7 s; with hysteresis off, 21/21, mean 30.1 s, max 57.8 s.
   - `ea7efd4`: `blocked()` grows the rectangle only towards the motion (fixes the corner deadlock, logged as V2-M2). The same commit adds an early `return` when nothing is feasible, which returns BEFORE `move_2D`, so no stop is published (Gazebo's VelocityControl keeps the last command). Told the user.
+  - 2026-11-07 Gazebo debugging: Claude read `/scan` and `/odom` from the user's running Gazebo (read-only, `rclpy` script in the scratchpad: grab_scan.py / grab2.py). Gazebo LiDAR is 10 Hz; angle_increment is 6.28/359 (the user uses 2*pi/360). The Gazebo robot (URDF meshes) is 0.215 x 0.19 m (half 0.1075 x 0.095), with the LiDAR 0.041 ahead of the centre.
+  - `b6ac3e0`: sim/real attribute blocks (sim L 0.1075, W 0.095, lidar 0.041), `test_distance` 0.10 used everywhere, `free_distance` (stepped, same growth rule) and room bonus `w_free` 1.0. Earlier a stuck case: W 0.11 > real 0.095, so a touching wall was inside the ignored 'body'.
+  - `78f31fe` and `e390b2d`: hysteresis compares with the old direction's CURRENT score (`scores` dict returned as `result[4]`); novelty bonus `w_new` 1.5 at `min(probe 0.4, free)`; sim `visited_weight` 0.2 (real 0.1).
+    Harness (Gazebo-size body, 21 layouts, 90 s): 21/21, mean 24.8 s (25.1 s noisy), slowest 38 s (49 s), about 0.3-0.7 turn-backs per run. Novelty without proximity: 17-19/21, stuck rocking forever. A heavier proximity weight instead of novelty: slower.
+    Leftover: the old `room_score = w_free * free_distance(...)` line is still there, so free distance is computed twice.
+    On hold by the user's choice: lane shifts (`best_lane`). Runners: `$SP/run_gz3.py` (Gazebo-size body, NOISE env, turn-backs count).
 - `setup.py` on `main` has no entry point for `obstacle_course_reactive` yet. The user's local `setup.py` may differ.
 
 ### C) After compaction
