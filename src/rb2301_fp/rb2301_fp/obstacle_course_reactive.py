@@ -129,10 +129,12 @@ class ObstacleCourseNode(Node):
         self.lidar_offset = 0.045    
         self.feasible_directions  = []
 
-        self.goal_direction = 315 #in degrees
+        self.goal_direction = np.deg2rad(315) #in degrees
         self.R = 0.2 #the maximum radius that counts towards proximity score
         self.visited_weight = 5 #weight for proximity in calculating score for which direction to travel in
 
+        self.visited_points = []
+        self.tick = 0
         
 
     def sub_scan_callback(self, msg):
@@ -203,18 +205,22 @@ class ObstacleCourseNode(Node):
         self.occupied_points  = scan_to_points(self.last_scan,self.angle_step,self.lidar_offset)
 
         #then we check which of the 16 directions if feasible by seeing if we move in each direction by 15cm, would we hit anyt
-        self.feasible_directions = feasible_directions(self.occupied_points,self.L,self.W) #directions given in degrees CCW from robot direction
-        self.selected_direction = score(self.visited_points,self.feasible_directions,self.pose,self.goal_direction,self.R,self.visited_weight)
+        self.feasible_directions = feasible_directions(self.occupied_points,self.L,self.W) #directions given in radians CCW from robot direction
+        
+        self.tick += 1
+        if self.tick % 10 == 0:
+            self.visited_points.append((self.pose[0], self.pose[1]))
+        self.selected_direction = best_direction(self.visited_points,self.feasible_directions,self.pose,self.goal_direction,self.R,self.visited_weight)
                 
             
 
 
         ###### INSERT CODE HERE ######
 
-def score(visited_points,feasible_directions, current_pose,goal_direction,R,visited_weight,d=0.15):
+def best_direction(visited_points,feasible_directions, current_pose,goal_direction,R,visited_weight):
     heading = np.deg2rad(current_pose[2])
     visited = np.array(visited_points).reshape(-1, 2)          # (n, 2) array of past (x, y)
-    
+    best_thetas, best_score = None, -np.inf
     for theta in feasible_directions:
         px = current_pose[0] + 0.15 * np.cos(heading + theta)
         py = current_pose[1] + 0.15 * np.sin(heading + theta)
