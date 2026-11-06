@@ -45,6 +45,8 @@ except RuntimeError:
     _print('seed %d: no layout\n' % seed); sys.exit()
 if SWING == 'none': w.swingers = []
 import os
+if os.environ.get('HX'):                                 # test setup: pendulum half-thickness (m)
+    for _s in w.swingers: _s['hx'] = float(os.environ['HX'])
 if os.environ.get('AMP'):                                # test setup: swing half-width (m) for each pendulum, from the range AMP=lo,hi
     _lo, _hi = map(float, os.environ['AMP'].split(','))
     _ar = np.random.default_rng(500 + seed)
@@ -78,7 +80,7 @@ try:
         CMD[:] = [0.0, 0.0, 0.0]; PR.clear()
         node.timer_callback()
         msgs += ['t %.1f %s' % (t, p) for p in PR if not p.startswith('crossing') and p not in ('pendulum line found',)]
-        reasons += [('beside' if 'beside' in p else 'gamble' if 'waited' in p else 'timed' if 'just left' in p else 'nothing moved' if 'nothing' in p else p) for p in PR if p.startswith('crossing:')]
+        reasons += [('late' if 'too late' in p else 'beside' if 'beside' in p else 'gamble' if 'waited' in p else 'timed' if 'just left' in p else 'nothing moved' if 'nothing' in p else p) for p in PR if p.startswith('crossing:') or 'too late' in p]
         if node.startup == 'run' and node.tick > 1: max_dev = max(max_dev, abs(math.degrees(th)))
         hit = w.collides(x, y, th, t)
         if hit == 'static' and not in_s: hits_s += 1

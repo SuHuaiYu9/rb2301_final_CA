@@ -371,6 +371,32 @@ The user asked for heading control and whatever else the reference needed to run
 | wide swings | None | 4/12 (the rest still waiting) | 12/12 |
 | wide swings | 20 s | 12/12 | 7/12 |
 
+- **P19: after a false pendulum line was ignored, the robot declared the goal (user, real robot, `line_depth` 0.05).** A static obstacle was taken for a pendulum. The robot waited, then correctly decided it wasn't one ("not a pendulum line: ignoring it"), then said "goal reached" and stopped for good.
+  - **Why (a real logic bug, reproduced in 2D):** ignoring a line was done by marking it as crossed. But "a line has been crossed and no line is ahead" is exactly the condition for "past the pendulums: drive straight to the goal". The robot drove forward until blocked, and something wide in front counted as the end wall.
+  - **Fix:** a separate "ignored" mark. Ignored lines are left out of stopping, waiting, crossing and the past-the-pendulums check. After the fix, the same reproduction carries on navigating.
+  - **The false detection itself** is occasional: the motion test isn't perfect on real LiDAR data. The 2 s rule caught it correctly.
+- **P20: waiting at a full-width swing with no movement (user, real robot).** The robot crossed the first pendulum beside its small swing, then stopped in front of the second, which "swings almost the full width of the corridor", and didn't move for a long time.
+  - **Why:** no room beside the swing, and the lane never stayed clear long enough. A full-width swing passes the middle of the corridor twice per period, so a lane in the middle is only clear for about a third of a period at a time. The crossing needed about 1.7 s, plus 0.3 s margin.
+  - **Fixes:**
+    - `line_depth` set to the real pendulum's thickness plus a margin: 3 cm + 5 cm = 0.08 (was 0.20, sized for the simulator's 6–16 cm pendulums). The crossing now takes about 1.3 s.
+    - With no room beside the swing, wait near the nearer wall, with the robot's side 8 cm from it. There the pendulum only reaches the lane once per swing (at the end of it), so the lane is clear for about 60% of a period. Gap timing restarts at the new spot.
+    - A status line every 2 s while waiting: the swing range, the last measured clear time, and the time needed.
+- **P21: a wall counted as "in the lane".** When the robot waited within 5 cm of a wall, the lane check (robot width + 5 cm each side) included the wall, so the lane never looked clear.
+  - **Fix:** walls are left out of the lane check. A wall also has points at the same sideways position well before and well after the line; a thin pendulum doesn't.
+- **P22: a second pendulum found too late.** A small, slow swing hidden behind the first pendulum was only noticed when the robot was 11 cm away, and it dropped off again after 2 s. The robot drove into its swing area, then froze there, because new possible lines kept appearing right in front of it.
+  - **Fixes:** stop for a possible line only while there's still room to stop short of it, and keep stopping for up to 4 s after the last movement seen there. If a line is confirmed when the robot is already at it, finish crossing it straight away instead of waiting inside it.
+
+**Results after P19–P22** (2D, real-robot mode, 3 cm pendulums; no wall or obstacle contacts, and no pendulum contacts, in any of these runs):
+
+| Pendulums | Reached the goal |
+|---|---|
+| small swings, 14 new layouts | 13/14 |
+| small to medium, with off-angle start, wrong heading, drift and noise | 11/12 |
+| wide swings, 12 layouts / 14 new layouts | 6/12 / 5/14 |
+| no pendulums, with noise | no false crossings |
+
+With wide swings, the rest were still waiting when the 4-minute test ended (some crossed after about 2 minutes), because `max_wait` is None.
+
 ## V2-D2: Write my own reactive controller instead of using Claude's reference (2026-11-06)
 - **Decision:** the user will write their own reactive controller from the original template (`obstacle_course_template.py`, commit `88d3f81`), rather than use Claude's reference code (V2-REF).
 - **Why (in the user's words):** "i dont want to use the one that you have just coded without being able to do it myself."
@@ -382,4 +408,5 @@ The user asked for heading control and whatever else the reference needed to run
   1. **First start:** "START-UP CHECK FAILED: turning left changed the heading by -0.0 deg". Fixed by P14.
   2. **After that:** the robot starts and runs on the real robot, including the pendulum part. But it doesn't always clear pendulums with small swings (P15).
   3. **With fixes 1 and 2 (P15–P18, `max_wait` None):** "it looks good now". It crossed the first pendulum, which had "a pretty small amplitude, so there was a big clearing on the right that it can cross through". Then it detected and stopped in front of the second pendulum, "which swings almost the full width of the corridor, then it just stopped there without moving at all for a long time". The terminal did not say it had reached the goal, so it hadn't wrongly decided it was finished.
+  4. **With `line_depth` = 0.05:** a static obstacle was mistaken for a pendulum. The robot stopped and waited, realised it wasn't a pendulum, then decided the goal was reached and stopped for good (P19).
 - **Fix:**
