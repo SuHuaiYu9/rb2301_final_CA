@@ -16,7 +16,7 @@ np.set_printoptions(2, suppress=True, threshold=np.inf) # Print numpy arrays to 
 set_logger_level("obstaclecourse", level=LoggingSeverity.INFO) # Configure to either LoggingSeverity.INFO or LoggingSeverity.DEBUG  
 
 '''
-- split up into 12 directions, each 22.5 degrees apart
+- split up into 16 directions, each 22.5 degrees apart
 - for each direction, determine if moving 15cm in that direction would hit any obstacles. 
 those that do not hit obstacles are feasible paths, and we move on to assign them each a score based on general goal directino and proximity
 to previously visited points
@@ -123,6 +123,13 @@ class ObstacleCourseNode(Node):
 
         self.pose = None
 
+
+        self.L = 0.115  #robot's half length
+        self.W = 0.11  #robot's half width
+        self.lidar_offset = 0.045
+        self.angle_step = np.deg2rad(1) #each neighbouring lidar ray differs by 1 degree, but we need radian for numpy so yeah
+        self.feasible_directions  = []
+
     def sub_scan_callback(self, msg):
         """Scan subscriber"""
         if len(msg.ranges) <= 360:
@@ -183,7 +190,17 @@ class ObstacleCourseNode(Node):
             return # Calibration mode: look, don't drive
 
         ###### INSERT CODE HERE ######
-        #split the scan into 12 parts? 
+        #first transform the lidar scan into occupied points in robot's frame
+        self.occupied_points  = scan_to_points(self.last_scan,self.angle_step,self.lidar_offset)
+
+        #then we check which of the 16 directions if feasible by seeing if we move in each direction by 15cm, would we hit anyt
+
+        for idx in range(16+1):
+            theta = np.deg2rad(idx*22.5)
+            if not blocked(self.occupied_points,theta,self.L,self.W):
+                self.feasible_directions.append(theta)
+                
+            
 
 
         ###### INSERT CODE HERE ######
@@ -191,6 +208,7 @@ class ObstacleCourseNode(Node):
 
 def blocked(occupied_points, theta, L, W, d=0.15, step=0.01):
     '''True if sliding d along theta would hit a LiDAR point: checks the robot's rectangle at every step along the way.'''
+    #L is the half length of robot, W is half width of robot, d is how far robot moves, step is the smaller discretized step distance we test
     x, y = occupied_points[:, 0], occupied_points[:, 1]
     outside_body = ~((np.abs(x) <= L) & (np.abs(y) <= W))      # ignore points inside the robot's own body
     for t in np.arange(step, d + 1e-9, step):
@@ -198,6 +216,22 @@ def blocked(occupied_points, theta, L, W, d=0.15, step=0.01):
         if np.any(outside_body & (np.abs(x - cx) <= L+step) & (np.abs(y - cy) <= W+step)):
             return True
     return False
+
+def scan_to_points(scan,angle_step, lidar_offset):
+    #converts the lidar scan into an array of occupied points in robot's reference frame
+    x_list = []
+    y_list = []
+    for idx in range(len(scan)):
+        if not math.isfinite(scan[idx]) or scan[idx]<=0.05: #check whether this lidar value is valid bro
+            continue
+        angle = idx*angle_step
+        x = lidar_offset + np.cos(angle)*scan[idx]
+        y = np.sin(angle)*scan[idx]
+        x_list.append(x)
+        y_list.append(y)
+    final_array = np.column_stack((np.array(x_list),np.array(y_list)))
+    return final_array
+
 
 def main(args=None):
     arg_parser = argparse.ArgumentParser(description="RB2301 final project")
