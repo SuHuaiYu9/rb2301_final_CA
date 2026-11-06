@@ -43,6 +43,14 @@ Saved 2026-11-03, last updated 2026-11-06 (just before a context compaction the 
   - `L` 0.115, `W` 0.11; no heading hold yet (the user noted it's needed for the real robot).
 - **Last check (`4002047`):** correct. In 40 s harness runs: seeds 0 and 3 fine; seed 5 ended at (1.17, −0.50), still in corridor 1. Claude offered to trace why; not answered.
 - **Next in the user's plan:** dynamic-obstacle (pendulum) detection, the user's "seen-past" idea. They asked about the ray-angle geometry, and Claude explained it (find the new ray that points at the old world point, compare with its neighbours, 10 cm margin).
+- **2026-11-06 progress on the user's code:**
+  - `89db98c`: proximity = average over visited points within 40 cm. Harness: the robot loops, because an average doesn't grow with repeated visits.
+  - `217426f`: the user switched to a SUM (`-w * sum(R - d)/R`), R 0.15, `visited_weight` 10, a point every tick, `best_direction` returns `(best_thetas, goal_score)` and is called twice.
+    - Code bugs told to the user: `goal_score` is unbound when nothing is feasible (crash, seen in 44 of 1680 grid runs); the returned `goal_score` is the last direction's, not the chosen one's. Fix: save `best_goal` with `best_thetas`.
+  - Grid on 21 layouts (no pendulums): what matters is the cost of one pass, about `w * R / (0.015 m * ticks between points)`. Cost 1-3 is best (R 0.15, every tick, w 0.1 gives 21/21). The user's w 10 gives cost 100 and 17/21: seed 5 can't go back over its own path at the turn.
+  - Ablation of Claude's reference (21/21): look only 15 cm -> 13/21; no memory -> 12/21; no room bonus, no hysteresis, no lanes -> 20/21 each.
+  - Plan agreed: copy the reference part by part. Step 0 = crash fix plus weight about 0.1. Step 1 = free distance plus room bonus (`w_free * min(free, 1)`); Claude gave a stepped `free_distance` like `blocked()`. Then: memory at min(0.4, free), novelty bonus, hysteresis 0.2, lanes.
+  - **The user put free distance ON HOLD; they think hysteresis alone may be enough and will try that next.** Don't push free distance.
 - `setup.py` on `main` has no entry point for `obstacle_course_reactive` yet. The user's local `setup.py` may differ.
 
 ### C) After compaction
