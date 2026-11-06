@@ -152,15 +152,19 @@ class ObstacleCourseNode(Node):
             self.W = 0.095 #robot's half width
             self.lidar_offset = 0.041    
             self.w_free = 1.0 #weight for room: w_free * free distance (up to 1 m)
+            self.w_new = 1.5   #weight for novelty: bonus for heading somewhere the robot hasn't been
+            self.probe = 0.4   #novelty is judged at the point up to 0.4 m along each direction (less if blocked sooner)
         else:
             self.speed = 0.3  
             self.test_distance = 0.10
             self.R = 0.15 #the maximum radius that counts towards proximity score
-            self.visited_weight = 0.1 #weight for proximity in calculating score for which direction to travel in
+            self.visited_weight = 0.1 #we ight for proximity in calculating score for which direction to travel in
             self.L = 0.115  #robot's half length
             self.W = 0.11  #robot's half width
             self.lidar_offset = 0.045
             self.w_free = 1.0 #weight for room: w_free * free distance (up to 1 m)
+            self.w_new = 1.5   #weight for novelty: bonus for heading somewhere the robot hasn't been
+            self.probe = 0.4   #novelty is judged at the point up to 0.4 m along each direction (less if blocked sooner)
 
 
 
@@ -253,10 +257,10 @@ class ObstacleCourseNode(Node):
         if self.selected_direction is None or moved >= self.test_distance or path_blocked:
             result = best_direction(self.visited_points, self.feasible_directions, self.pose,
                                     self.goal_direction, self.R, self.visited_weight,self.test_distance,
-                                    self.occupied_points, self.L, self.W, self.w_free)
+                                    self.occupied_points, self.L, self.W, self.w_free,self.w_new,self.probe)
             new_theta, new_score, scores= result[0], result[3],result[4]
             keep_old = (self.last_best_theta in self.feasible_directions
-                        and new_score <= scores[self.last_best_score] + 0.2)     # new one isn't better by more than 0.2
+                        and new_score <= scores[self.last_best_theta] + 0.2)     # new one isn't better by more than 0.2
             if keep_old:
                 self.selected_direction = self.last_best_theta
             else:
@@ -277,7 +281,7 @@ class ObstacleCourseNode(Node):
 
         ###### INSERT CODE HERE ######
 
-def best_direction(visited_points,feasible_directions, current_pose,goal_direction,R,visited_weight,test_distance,occupied_points, L, W, w_free):
+def best_direction(visited_points,feasible_directions, current_pose,goal_direction,R,visited_weight,test_distance,occupied_points, L, W, w_free,w_new,probe):
     heading = np.deg2rad(current_pose[2])
     visited = np.array(visited_points).reshape(-1, 2)          # (n, 2) array of past (x, y)
     best_thetas, best_score, goal_score, proximity_score = None, -np.inf,None,None
@@ -292,8 +296,20 @@ def best_direction(visited_points,feasible_directions, current_pose,goal_directi
         # count nearest visited point only
         proximity_score = -visited_weight * sum(R - d)/R if len(d) else 0.0
         room_score = w_free * free_distance(occupied_points, theta, L, W)      # how far it can go this way, up to 1 m
+        free = free_distance(occupied_points, theta, L, W)          # how far it can go this way, up to 1 m
+        room_score = w_free * free
 
-        score = goal_score + proximity_score +room_score     # computed for this theta as above
+        # novelty, judged at the point it can actually reach this way (up to probe)
+        look = min(probe, free)
+        nx = current_pose[0] + look * np.cos(heading + theta)
+        ny = current_pose[1] + look * np.sin(heading + theta)
+        if len(visited):
+            nearest = np.min(np.hypot(visited[:, 0] - nx, visited[:, 1] - ny))
+            novelty_score = w_new * min(1.0, nearest / probe)      # 0 on a visited point, w_new at probe or further
+        else:
+            novelty_score = w_new
+
+        score = goal_score + proximity_score +room_score +novelty_score     # computed for this theta as above
         scores[theta] = score
         if score > best_score:
             best_thetas, goal_score, proximity_score, best_score = theta,  goal_score, proximity_score,score
