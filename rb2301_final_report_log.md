@@ -215,3 +215,126 @@ Pure pursuit with the robot treated as a point that can move in any direction: e
     - On ticks with no new scan, a still robot's grid doesn't change, so the count is 0.
 - **Fix:**
 
+
+## V2-D1: Switch to purely reactive control, with no occupancy grid (2026-11-05)
+- **Decision:** drop the occupancy grid, A*, pure pursuit and the grid-window detection, and look for a purely reactive controller instead.
+- **Why:**
+  - A prof said the course can be solved with reactive control alone and no occupancy grid ("nested if...else blocks", a bias towards the goal's general direction, and a bias towards places not visited or seen before).
+  - The user felt the grid version was over-complicated and not robust, and expected LiDAR noise and localisation noise to make it worse on the real robot. V2-M1 measured this in a 2D test: with 1 cm LiDAR noise and 3 mm pose jitter, a robot standing still in front of a wall saw 23–26 cells change per comparison at 1 cm cells, and 98 at 0.5 cm cells.
+- **Known course facts to use:**
+  - The shape is fixed: a straight corridor, a right turn into a second straight corridor, then a left turn through the door into the swinging-obstacle region, with the goal wall at the back.
+  - The robot starts near the back of the first corridor, facing its far end.
+  - Optitrack gives the pose.
+- **Rejected:** wall following, which Claude proposed first. The prof does not want wall following ("too simplistic").
+
+## V2-REF: Claude's reactive reference code (written by Claude at the user's request, 2026-11-05 to 06)
+**Not the user's code.** Kept for the report as a record of a working approach, its design rationale, and the problems found while building it. File: `claude_tools/reference/obstacle_course_reactive.py` on branch `claude/reactive-version`. Unless stated otherwise, all test results are from Claude's 2D simulator (`claude_tools/`), not Gazebo.
+
+### How it works, and why each part is there
+1. **Everything happens in the robot's own frame:** x forward, y left, measured from the robot's centre.
+   - **Why:** the robot never turns (D1), so this frame stays lined up with the course for the whole run. No map or coordinates are needed. Every command is worked out in the robot's frame, so it means the same thing whatever the start heading (the real robot starts at about 96°).
+2. **Scan to points** (`scan_to_points`): each LiDAR reading becomes an (x, y) point measured from the robot's centre, allowing for the LiDAR being ahead of the centre. Readings that aren't finite or are under 0.05 m are dropped, and so are points inside the robot's own outline.
+   - **Why:** obstacle distances must be measured from where the robot's body actually is. Points inside the robot can't be obstacles; they're glitches, or the robot seeing itself.
+3. **"Can I go that way?"** (`free_distance`): how far the robot can slide in a direction before a LiDAR point enters the strip it would sweep. The strip is the robot's outline projected sideways, plus a side margin, so it's narrower when moving forward (width 0.24 m) and wider diagonally. A direction is blocked if the robot can't slide at least 0.10 m.
+   - **Why:** a gap narrower than the robot automatically counts as blocked, with no special cases.
+4. **Choosing a direction:** each tick, score 16 directions, every 22.5°. The score has four parts:
+   - **Goal bias:** cos(angle between the direction and 45° right of forward). The goal is generally forward-right of the start, as the prof suggested.
+   - **Room bonus:** 1.0 × (free distance, up to 1 m). This makes a long view through a gap beat a short slide along a wall. Without it, the robot slid past the door gap (problem P5).
+   - **Novelty bonus:** 1.5 × (how far the point it's looking at is from anywhere the robot has been, up to 1). The point is 0.4 m along the direction, or less if the direction is blocked sooner. This is the prof's "bias towards places not visited". It's what gets the robot out of the corner at the door wall: going back along the wall towards the gap costs 0.71 of goal bias but gains 1.5 of novelty.
+   - **Time-spent penalty:** −0.1 for each recorded position within 0.25 m of that point. Positions are recorded every 0.25 s, so this grows the longer the robot lingers. It gets the robot out of dead-end pockets (P5), where a simple been-here-or-not bonus isn't enough.
+5. **Lining up with gaps** (`best_lane`): for each direction, also try lanes shifted sideways up to 12 cm in 2 cm steps, if there's room to slide there first. The robot moves along the direction with a sideways speed of 2 × the shift.
+   - **Why:** with only 16 directions, the robot couldn't line up with a gap slightly off its path (P3). The 2 cm steps fix narrow gaps with noise (P11).
+6. **Commitment and hysteresis:** keep a direction for 0.15 m, or until it's blocked, before deciding again. Only switch if another direction scores at least 0.2 higher.
+   - **Why:** without them, the robot dithered between two directions whenever one kept flipping between blocked and free (P1).
+7. **Speed:** the speed along the direction is never more than the unshifted free distance, so it slows down near obstacles and can't run into anything while lining up. The total speed is capped at 0.3 m/s, the real robot's limit.
+8. **Seeing movement** (`seen_past` / `changed_points`): compare each new scan with the previous one. A point counts as moved if the new scan, looking towards where that point was (the ray pointing at it and its two neighbours, taking the shortest), sees more than 10 cm past it. The reverse is checked too: a new point where the old scan saw more than 10 cm past it means something arrived.
+   - **Why it beats comparing grid cells (V2-M1):** a wall can never become see-through, however the robot moves. The 10 cm margin is about 10 times the noise sources (LiDAR noise about 1 cm, pose error, and up to 1.5 cm of robot movement between scan and tick). The neighbouring rays stop a ray that slips past an obstacle's edge from counting.
+   - **It never compares the same ray number in the two scans.** It recomputes each point's angle and distance from the new LiDAR position.
+   - **Measured (2D, with noise):** standing still in front of a wall, 0–1 points, against 23–98 changed grid cells. Driving the static course, up to 5–15 points per scan pair, against up to 37–78 cells.
+9. **Finding pendulum lines** (`update_lines`): each pendulum swings across the course at a fixed distance ahead, so its moving points keep the same position along the robot's forward axis.
+   - A line is confirmed once there are 4 or more moved points within 0.12 m on 5 scan pairs within 2 s.
+   - The line's position is the 10th percentile of its points, and only ever moves closer to the robot.
+   - **Why:** a thick pendulum's sides add moving points further back, which made the robot stop too close (P7). Stopping early is the safe mistake. The 4-point, 5-scan rule stops noise from creating lines that don't exist (P11).
+10. **Stop short of lines:** the robot's front stops 0.08 m before any confirmed line, and before any line with movement in the last 2 s that isn't confirmed yet.
+    - **Why:** to wait outside the pendulum's sweep. Stopping at unconfirmed lines too stops the robot driving into a pendulum that hasn't been confirmed yet (P12).
+11. **Watching the pendulum while waiting** (`line_sides`): take the scan points along the line, from 6 cm in front of it to 20 cm behind it, to allow for pendulum thickness. Find the nearest point on each side of the robot's lane (its width plus 5 cm each side). If that gap shrinks faster than 0.05 m/s the pendulum is approaching; if it grows, it's leaving.
+    - **Why nearest points rather than outlines:** from close up, the pendulum is seen almost edge-on, so its outline is unreliable (P7). Walls never move, so they never look like they're approaching.
+12. **When to cross:**
+    - **Go if** nothing is in the lane, nothing is approaching, and either:
+      - the pendulum has just left the lane (within 0.4 s), moving towards the side with more room; or
+      - nothing on the line has moved for 1 s, by both the side gaps and the motion test.
+    - **Why the side with more room:** the time until a pendulum returns runs from about half its period (lane in the middle of the swing) to a full period (lane near one end of the swing). Leaving towards the far side gives the longest gap.
+    - If something static sits in the lane for 2 s, the line is ignored, because it isn't a pendulum.
+13. **Crossing:** drive straight forward at 0.3 m/s until the robot's rear is 0.20 m past the line. Never abandon a crossing halfway; pause only if physically blocked, and give up after 3 s.
+    - **Why:** stopping inside a sweep is the worst place to be (P10).
+14. **Final approach and goal:** once a line has been crossed and no line is ahead, drive straight forward. The goal is reached when the robot can't move forward (free distance under 0.10 m) and there is a wall at ±45° (free distance under 0.25 m both ways), for 1 s.
+    - **Why:** this matches the confirmed goal definition: past the pendulums, the robot can no longer move forward along its own x-axis. Driving straight stops the robot wandering back behind a line (P9). The wall check stops a pendulum in front from counting as the goal (P12).
+15. **Template rules:** only the two placeholder lines inside `INSERT CODE HERE` were replaced. Helper functions are added outside the class, and new attributes are added at the end of `__init__`. No template line was changed.
+
+### Problems found during development, and fixes (in order)
+- **P1: dithering at the door corner.** The first version used the goal bias plus a novelty bonus, 16 directions and a 0.15 m free threshold. At the corner, "right" (towards the goal) flipped between blocked and free every 1.5 cm, so the robot rocked left and right.
+  - **Fix:** commit to a direction for 0.15 m; look only as far as the free distance for novelty, so a short dead end counts as visited; novelty weight 2.0.
+- **P2: waiting never fired, and the goal fired early or never.** Testing only for points disappearing found too few: a pendulum sliding along its own length uncovers only a few points per scan. Separately, the goal ("pendulums seen and can't move forward for 1 s") fired when a pendulum blocked the way, or never fired when the pendulums weren't detected.
+  - **Fix:** the motion test also counts points appearing (P3). The goal rules were redone later (P4, P9, P12).
+- **P3: stuck at gaps slightly off the robot's path.** For example, a 0.35 m gap between an obstacle and a wall, or a passage just beyond an obstacle's corner. With only 16 directions the robot couldn't line up, and rocked back and forth.
+  - **Fix:** sideways-shifted lanes (`best_lane`) and a sideways speed towards the best lane.
+  - **Result:** 6 of 12 layouts reached the end wall.
+- **P4: false goal at the door wall.** The Gazebo-style pendulums are always moving, so they were seen through the gap. The robot then couldn't move forward at the door wall, so "pendulums seen and can't move forward" counted as the goal.
+  - **Fix (temporary):** the goal needs pendulums seen moving behind the robot. Later replaced by the line logic (P9).
+- **P5: dead-end pockets, then wandering away.**
+  - The goal bias kept pulling the robot back into a pocket in the goal direction, next to the door. A been-here-or-not memory couldn't get it out.
+  - The first fix, a time-spent penalty of 0.5 per recorded position, was too strong: a single pass leaves about 7 positions (−3.5), more than the goal bias can ever add. The robot slid past the door gap, then treated the whole area as visited and wandered back the way it came.
+  - **Final fix:** penalty 0.1 per position, with the capped novelty bonus (1.5) back, plus the room bonus.
+  - **Result:** navigation only, through the door in 12/12 layouts, 12/12 with noise, and 14/14 new layouts, with no wall or obstacle contacts.
+- **P6: the simple "wait if something moves in my path" rule stopped the robot inside a pendulum's sweep.** With real-style pendulums (held, then released when the robot nears the door), there were contacts in 12/12 runs (1–14 each), and the goal was called 0.5–1.4 m short in 8/12.
+  - **Fix:** pendulum line tracking, stopping short of lines, and timed crossing.
+- **P7: unsafe crossings ("nothing moved for 1 s" while the pendulum was moving).**
+  - The real-style pendulums are 6–16 cm thick, and moving points on their sides placed the line about 5 cm too far ahead. The robot waited 2–3 cm from the pendulum's face and was brushed while waiting.
+  - From that close, the face is seen almost edge-on, so the first watching method (groups of points longer than 10 cm) found nothing.
+  - **Fixes:** the line is placed at its near end and only moves closer; the watched strip runs from 6 cm in front to 20 cm behind the line; the nearest point on each side is tracked instead of groups; "nothing moved" also needs no motion hits on the line for 1 s; standoff 0.10 m (later 0.08).
+- **P8: waiting forever.** The stricter "nothing moved" rule from P7 never let the robot go when pendulum tracking failed. Fixed by the nearest-point tracking in P7.
+  - **Result:** real-style pendulums, 10/12 reached the end wall.
+- **P9: wandering back after the pendulums.** After crossing both lines, the robot wandered back behind line 1 (lines stay marked as crossed) and declared the goal there.
+  - **Fix:** after the last line, drive straight forward to the wall.
+  - **Result:** real-style 12/12; Gazebo-style 11/12.
+- **P10: remaining contacts while crossing.** Three causes:
+  - A crossing takes about 1.4–1.5 s (robot length 0.22 m + standoff + pendulum thickness, at 0.3 m/s), and fast pendulums (2.6 s period) can return in about 1.3 s.
+  - The crossing was declared done when the rear was 7 cm past the line, but pendulums can be 16 cm thick.
+  - A crossing was abandoned if something was right in front, leaving the robot inside the sweep.
+  - **Fixes:** crossing done only when the rear is 0.20 m past the line; never abandon a crossing (pause if blocked, give up after 3 s); standoff 0.08 m.
+  - **Result:** real-style 12/12, with 6/12 runs contact-free.
+- **P11: noise.**
+  - With 1 cm noise, up to 9 false pendulum lines were found, and the robot waited about 2 minutes at lines that didn't exist. **Fix:** a line needs 4 points per scan pair on 5 scan pairs (was 2 points on 4).
+  - Navigation got stuck at very tight gaps with noise, such as 0.34 m between an obstacle and a wall, which left a 4 cm window when the lanes stepped in 4 cm. **Fix:** lanes in 2 cm steps.
+- **P12: the stricter line test confirmed the second line too late.** The robot was already at that pendulum during the final approach, and the goal was called behind it.
+  - **Fixes:** also stop short of unconfirmed lines with movement in the last 2 s; the goal needs a wall at ±45°.
+- **P13: Gazebo test by the user, robot didn't take a visible gap** (user's screenshot; obstacles moved in the Gazebo window).
+  - Passing sideways, the robot's length is across the gap, so the code needed 0.22 + 2 × 0.03 = 0.28 m. The gaps were 0.26 m (litter bin to wall) and 0.28 m (can to wall).
+  - The layout was rebuilt in 2D from Gazebo's live obstacle poses, the mesh sizes and the world file:
+    - `side_margin` 0.03: never got through in 90 s;
+    - 0.02: through in 24 s;
+    - 0.01: through in 20 s.
+  - With 0.02 on the usual tests: Gazebo-style pendulums 12/12 (was 10/12); navigation 12/12 and 14/14; no wall or obstacle contacts; with noise 11/12.
+  - **Conclusion:** a tuning issue (the side margin). It's a trade-off on the real robot, where a smaller margin leaves less room for noise.
+
+### Final test results (2D simulator, `side_margin` 0.03)
+| Test | Reached the goal / got through | Runs with no pendulum contact |
+|---|---|---|
+| Navigation only: 12 layouts / with noise / 14 new layouts | 12/12, 12/12, 14/14 | – |
+| Real-style pendulums, 12 layouts | 12/12 | 6/12 (7 contacts) |
+| Real-style pendulums, 14 new layouts | 14/14 | 3/14 (15 contacts) |
+| Real-style pendulums, with noise (1 cm LiDAR, 3 mm pose) | 11/12 (one 0.34 m gap failed) | 8/12 |
+| Gazebo-style pendulums | 10/12 (12/12 with `side_margin` 0.02) | 10/12 |
+
+Real-robot mode (720-reading scans, maze-frame poses, start headings 96.3° / 0° / −45°): no errors, about 2 ms per tick. The grid version took 240–310 ms.
+
+- **Observed (Gazebo, user, 2026-11-05):** the user ran this code as their local `obstacle_course2.py`: "works pretty well now on gazebo".
+- **Still open:**
+  - With real-style pendulums, there is still about one contact per run.
+  - The real pendulums' speed is unknown. The test pendulums swing with a 2.6–4.5 s period; slower real ones would make the crossing much safer.
+- **Planned, to be implemented later:** pendulum period detection. While waiting at a line, measure each pendulum's period from its passes through the lane. Predict when it will next reach the lane, and only cross if the predicted clear time is longer than the crossing time (about 1.4 s).
+
+## V2-D2: Write my own reactive controller instead of using Claude's reference (2026-11-06)
+- **Decision:** the user will write their own reactive controller from the original template (`obstacle_course_template.py`, commit `88d3f81`), rather than use Claude's reference code (V2-REF).
+- **Why (in the user's words):** "i dont want to use the one that you have just coded without being able to do it myself."
+- **Planned:** pendulum period detection, to be implemented later (see V2-REF, "Planned").
