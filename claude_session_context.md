@@ -61,6 +61,8 @@ Saved 2026-11-03, last updated 2026-11-06 (just before a context compaction the 
     Harness (Gazebo-size body, 21 layouts, 90 s): 21/21, mean 24.8 s (25.1 s noisy), slowest 38 s (49 s), about 0.3-0.7 turn-backs per run. Novelty without proximity: 17-19/21, stuck rocking forever. A heavier proximity weight instead of novelty: slower.
     Leftover: the old `room_score = w_free * free_distance(...)` line is still there, so free distance is computed twice.
     On hold by the user's choice: lane shifts (`best_lane`). Runners: `$SP/run_gz3.py` (Gazebo-size body, NOISE env, turn-backs count).
+  - Door analysis (21 layouts, 0.6 m before to 0.3 m past the door): the user's code took 3-7 s in 16 layouts and 15-23 s in 5 (mean 7.9 s); Claude's took 5.9 s mean, with 2 slow. Causes: (1) arriving 2-5 mm off the gap edge, then sliding along the door wall (270 deg scores the same goal as 0 deg) into the corner, which lane shifts fix; (2) the goal pulling past the gap into the corner, with the 0.2 hysteresis keeping the diagonal.
+    **User then changed the goal direction to 337.5 deg (local, 2026-11-07): "now it is a lot better".** Not checked by Claude. Next: dynamic obstacle detection. Claude asked 4 design questions (which scans to compare, margin, count/region, what to do after detecting); not answered yet.
 - `setup.py` on `main` has no entry point for `obstacle_course_reactive` yet. The user's local `setup.py` may differ.
 
 ### C) After compaction
