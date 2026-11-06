@@ -123,12 +123,14 @@ class ObstacleCourseNode(Node):
 
         self.pose = None
 
-
+        self.last_scan = None
         self.L = 0.115  #robot's half length
         self.W = 0.11  #robot's half width
         self.lidar_offset = 0.045
-        self.angle_step = np.deg2rad(1) #each neighbouring lidar ray differs by 1 degree, but we need radian for numpy so yeah
+        self.angle_step =  2* np.pi/len(self.last_scan) if self.last_scan else 0    
         self.feasible_directions  = []
+
+        
 
     def sub_scan_callback(self, msg):
         """Scan subscriber"""
@@ -190,12 +192,15 @@ class ObstacleCourseNode(Node):
             return # Calibration mode: look, don't drive
 
         ###### INSERT CODE HERE ######
+        if self.last_scan is None:
+            return 
+
         #first transform the lidar scan into occupied points in robot's frame
         self.occupied_points  = scan_to_points(self.last_scan,self.angle_step,self.lidar_offset)
 
         #then we check which of the 16 directions if feasible by seeing if we move in each direction by 15cm, would we hit anyt
-
-        for idx in range(16+1):
+        self.feasible_directions = []
+        for idx in range(16):
             theta = np.deg2rad(idx*22.5)
             if not blocked(self.occupied_points,theta,self.L,self.W):
                 self.feasible_directions.append(theta)
