@@ -137,8 +137,8 @@ def seen_past(a, b, angle_step, margin):
     dist = np.hypot(wx - xb, wy - yb)                                   # each point's distance from scan b's LiDAR
     bearing = np.mod(np.arctan2(wy - yb, wx - xb) - hb, 2 * np.pi)       # and its direction in scan b
     k = np.round(bearing / angle_step).astype(int) % len(rb)             # scan b's reading pointing at it
-    seen = np.where(np.isnan(rb) | (rb < 0.05), 0.0, rb)                 # invalid reading: can't see past anything
-                                                                         # (inf = nothing in range, so it does see past)
+    seen = np.where(np.isfinite(rb) & (rb >= 0.05), rb, 0.0)            # inf / nan / too short: can't tell, so it can't
+                                                                         # count as seen past (real LiDARs report missed returns as inf)
     nearest = np.minimum(np.minimum(seen[(k - 1) % len(rb)], seen[k]), seen[(k + 1) % len(rb)])
     gone = nearest > dist + margin
     return np.column_stack((wx[gone], wy[gone]))
@@ -190,6 +190,32 @@ def line_sides(s, l, s_line, lane_lo, lane_hi, before=0.06, behind=0.20):
     left = on[on > lane_hi] - lane_hi
     right = lane_lo - on[on < lane_lo]
     return inside, (float(left.min()) if len(left) else np.inf), (float(right.min()) if len(right) else np.inf)
+
+def drive(node, vx, vy):
+    """Every movement command goes through here. Holds the heading at node.target_heading with a proportional
+    turn, and only translates (vx, vy in the robot frame) when the heading is within node.heading_tolerance of it."""
+    err = wrap_deg(node.target_heading - node.pose[2])                   # degrees, positive = need to turn left
+    turn = float(np.clip(node.k_heading * np.deg2rad(err), -node.max_turn, node.max_turn))
+    if abs(err) > node.heading_tolerance:
+        vx = vy = 0.0                                                    # too far off: turn on the spot first
+    node.move_2D(vx, vy, turn)
+
+def wall_alignment(points, max_angle=25.0, step=0.5, bin_size=0.02, max_range=1.5):
+    """Angle in degrees (anticlockwise) the robot should turn so the walls it sees line up with its own x and y axes.
+    Tries every angle from -max_angle to +max_angle: rotates the LiDAR points as they would look after that turn, and
+    measures how sharply they pile up along x and along y (a straight wall parallel to an axis puts many points in the
+    same 2 cm bin). The sharpest angle wins. Only points within max_range are used."""
+    p = points[np.hypot(points[:, 0], points[:, 1]) < max_range]
+    best_angle, best_sharpness = 0.0, -1
+    for a in np.arange(-max_angle, max_angle + 1e-9, step):
+        r = np.deg2rad(a)
+        x = p[:, 0] * np.cos(r) + p[:, 1] * np.sin(r)                    # how the points look after turning by a
+        y = -p[:, 0] * np.sin(r) + p[:, 1] * np.cos(r)
+        sharpness = (np.sum(np.unique(np.round(x / bin_size), return_counts=True)[1] ** 2)
+                     + np.sum(np.unique(np.round(y / bin_size), return_counts=True)[1] ** 2))
+        if sharpness > best_sharpness:
+            best_angle, best_sharpness = a, sharpness
+    return float(best_angle)
 
 class LidarNode(Node):
     def __init__(self):
@@ -297,6 +323,23 @@ class ObstacleCourseNode(Node):
         self.goal_ticks = 0             # ticks in a row that forward has been blocked after the pendulums
         self.done = False
         self.tick = 0
+        # heading control (the robot should never rotate: hold the heading it starts the run with)
+        self.k_heading = 1.5            # turn rate (rad/s) per radian of heading error
+        self.max_turn = 0.5             # rad/s
+        self.heading_tolerance = 10.0   # degrees: further off than this, stop moving and only turn
+        self.target_heading = None      # degrees, in the pose's frame (set at start-up)
+        self.heading_fix = 0.0          # degrees added to the pose heading for world-frame maths (see the forward check)
+        # start-up checks, real robot only: spin check -> square up with the walls -> forward check -> run
+        self.startup = 'run' if is_simulation else 'spin'
+        self.startup_ticks = 0
+        self.startup_ref = None
+        self.settled = 0
+        self.stopped = False            # a start-up check failed: never drive
+        # stale data: stop if pose or LiDAR updates stop arriving
+        self.pose_seen = None
+        self.scan_seen = None
+        self.pose_stale = 0
+        self.scan_stale = 0
 
     def sub_scan_callback(self, msg):
         """Scan subscriber"""
@@ -361,15 +404,90 @@ class ObstacleCourseNode(Node):
         self.tick += 1
         if self.last_scan is None:
             return
-        if self.done:
+        if self.done or self.stopped:
             self.move_2D(0.0, 0.0, 0.0)
             return
 
-        heading = np.deg2rad(self.pose[2])
+        # stop if the pose (Optitrack / odometry) or the LiDAR stops updating for 0.5 s; carry on when they come back
+        self.pose_stale = self.pose_stale + 1 if self.pose is self.pose_seen else 0
+        self.scan_stale = self.scan_stale + 1 if self.last_scan is self.scan_seen else 0
+        self.pose_seen, self.scan_seen = self.pose, self.last_scan
+        if self.pose_stale > 10 or self.scan_stale > 10:
+            if self.tick % 20 == 0:
+                print("no new pose or LiDAR data: stopped")
+            self.move_2D(0.0, 0.0, 0.0)
+            return
+        if self.target_heading is None:
+            self.target_heading = float(self.pose[2])                  # hold the heading the robot starts with
+
+        heading = np.deg2rad(self.pose[2] + self.heading_fix)         # the robot's true facing direction (see the forward check)
         cx = self.pose[0] + self.centre_ahead * np.cos(heading)       # robot centre in the world
         cy = self.pose[1] + self.centre_ahead * np.sin(heading)
         step = self.angle_step if self.angle_step else 2 * np.pi / len(self.last_scan)
         points = scan_to_points(self.last_scan, step, self.lidar_ahead, self.half_length, self.half_width)
+
+        # 0) real robot start-up checks, before anything else
+        if self.startup != 'run':
+            self.startup_ticks += 1
+            if self.startup == 'spin':
+                # turn left for 0.5 s: the heading must go up. If it goes down, heading control would spin the robot.
+                if self.startup_ref is None:
+                    self.startup_ref = float(self.pose[2])
+                if self.startup_ticks <= 10:
+                    self.move_2D(0.0, 0.0, 0.25)
+                    return
+                change = wrap_deg(self.pose[2] - self.startup_ref)
+                if change < 2.0:
+                    print(f"START-UP CHECK FAILED: turning left changed the heading by {change:+.1f} deg (expected about +7). Not driving.")
+                    self.stopped = True
+                    self.move_2D(0.0, 0.0, 0.0)
+                    return
+                self.startup, self.startup_ticks, self.startup_ref = 'align', 0, None
+            if self.startup == 'align':
+                # square up with the corridor walls, then hold that heading for the whole run
+                if self.startup_ref is None:
+                    turn_by = wall_alignment(points)
+                    self.target_heading = wrap_deg(self.pose[2] + turn_by)
+                    self.startup_ref = True
+                    print(f"squaring up with the walls: turning {turn_by:+.1f} deg")
+                self.settled = self.settled + 1 if abs(wrap_deg(self.target_heading - self.pose[2])) < 1.0 else 0
+                if self.settled < 10 and self.startup_ticks < 200:
+                    drive(self, 0.0, 0.0)
+                    return
+                self.startup, self.startup_ticks, self.startup_ref = 'check', 0, None
+            if self.startup == 'check':
+                # slide 10 cm in the direction with the most room: the direction the robot actually moves, minus the
+                # direction it was told to move, is its true heading. If that's far from the pose heading (a wrong
+                # Optitrack heading offset), use the measured heading for all world-frame maths.
+                if self.startup_ref is None:
+                    room = {k: free_distance(points, k * np.pi / 8, self.half_length, self.half_width, self.side_margin) for k in range(16)}
+                    k_best = max(room, key=room.get)
+                    if room[k_best] < 0.35:
+                        print("START-UP CHECK FAILED: no direction with room to check the heading. Not driving.")
+                        self.stopped = True
+                        self.move_2D(0.0, 0.0, 0.0)
+                        return
+                    self.startup_ref = (float(self.pose[0]), float(self.pose[1]), k_best * np.pi / 8)
+                dx, dy = self.pose[0] - self.startup_ref[0], self.pose[1] - self.startup_ref[1]
+                theta = self.startup_ref[2]
+                if np.hypot(dx, dy) < 0.10 and self.startup_ticks < 60:
+                    drive(self, 0.1 * np.cos(theta), 0.1 * np.sin(theta))
+                    return
+                if np.hypot(dx, dy) < 0.05:
+                    print("START-UP CHECK FAILED: told to move but the pose moved less than 5 cm. Not driving.")
+                    self.stopped = True
+                    self.move_2D(0.0, 0.0, 0.0)
+                    return
+                diff = wrap_deg(np.rad2deg(np.arctan2(dy, dx) - theta) - self.pose[2])
+                if abs(diff) > 15.0:
+                    self.heading_fix = diff
+                    print(f"WARNING: the robot's true heading is {diff:+.0f} deg from the pose heading. Using the measured "
+                          f"heading instead (check heading_offset_deg in optitrack_variables.config)")
+                else:
+                    print(f"heading check OK: true heading {diff:+.1f} deg from the pose heading")
+                self.startup = 'run'
+            self.move_2D(0.0, 0.0, 0.0)
+            return
 
         # remember where the robot has been, and for how long (for the visited penalty)
         if self.tick % self.record_every == 0:
@@ -451,7 +569,7 @@ class ObstacleCourseNode(Node):
                     self.crossing = None                               # blocked for 3 s: something static, give up
                     print("crossing blocked: giving up")
                 else:
-                    self.move_2D(self.speed if free_ahead >= 0.02 else 0.0, 0.0, 0.0)
+                    drive(self, self.speed if free_ahead >= 0.02 else 0.0, 0.0)
                     return
 
         # 3) at a line: wait at its edge until cleared to cross
@@ -460,9 +578,9 @@ class ObstacleCourseNode(Node):
             if self.go:
                 print("crossing: " + self.go)
                 self.crossing, self.go, self.waiting, self.blocked_ticks = line['s'], False, False, 0
-                self.move_2D(self.speed, 0.0, 0.0)
+                drive(self, self.speed, 0.0)
             else:
-                self.move_2D(0.0, 0.0, 0.0)
+                drive(self, 0.0, 0.0)
             return
 
         # 4) past the pendulums (a line has been crossed and no line is ahead): drive straight forward until the robot
@@ -472,7 +590,7 @@ class ObstacleCourseNode(Node):
             wall = all(free_distance(points, a, self.half_length, self.half_width, self.side_margin) < 0.25 for a in (np.pi / 4, -np.pi / 4))
             if free_ahead < self.free_min:
                 self.goal_ticks = self.goal_ticks + 1 if wall else 0      # a wall, not a pendulum, in front
-                self.move_2D(0.0, 0.0, 0.0)
+                drive(self, 0.0, 0.0)
                 if self.goal_ticks >= 20:
                     self.done = True
                     print("goal reached")
@@ -481,7 +599,7 @@ class ObstacleCourseNode(Node):
                 speed = min(self.speed, free_ahead)
                 if stop_at is not None:                                # a possible pendulum line ahead: stop short of it
                     speed = min(speed, max(0.0, 3.0 * (stop_at - front - self.standoff)))
-                self.move_2D(speed, 0.0, 0.0)
+                drive(self, speed, 0.0)
             return
 
         # 5) otherwise, score every direction the robot can slide in:
@@ -501,7 +619,7 @@ class ObstacleCourseNode(Node):
                      - self.w_visit * visits_near(visited, px, py, self.visit_radius))
             scores[k] = (score, free, shift)
         if not scores:
-            self.move_2D(0.0, 0.0, 0.0)                                # boxed in: wait
+            drive(self, 0.0, 0.0)                                      # boxed in: wait
             return
         moved = np.inf if self.decided_at is None else np.hypot(cx - self.decided_at[0], cy - self.decided_at[1])
         if self.direction_k not in scores or moved >= self.commit:     # blocked, or gone far enough: decide again
@@ -525,7 +643,7 @@ class ObstacleCourseNode(Node):
         total = np.hypot(vx, vy)
         if total > self.speed:                                         # keep the total speed at most 0.3 m/s
             vx, vy = vx * self.speed / total, vy * self.speed / total
-        self.move_2D(vx, vy, 0.0)
+        drive(self, vx, vy)
         ###### INSERT CODE HERE ######
                 
 
