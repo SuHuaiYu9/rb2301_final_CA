@@ -135,6 +135,10 @@ class ObstacleCourseNode(Node):
 
         self.visited_points = []
         self.tick = 0
+
+        self.speed = 0.3                         # m/s
+        self.selected_direction = None           # current direction (radians, robot frame)
+        self.decision_point = None               # (x, y) where that direction was chosen
         
 
     def sub_scan_callback(self, msg):
@@ -210,8 +214,26 @@ class ObstacleCourseNode(Node):
         self.tick += 1
         if self.tick % 10 == 0:
             self.visited_points.append((self.pose[0], self.pose[1]))
-        self.selected_direction = best_direction(self.visited_points,self.feasible_directions,self.pose,self.goal_direction,self.R,self.visited_weight)
-                
+        
+        
+        # choose a new direction at the start, once the robot has moved 15 cm since the last choice,
+        # or if something now blocks the rest of that 15 cm
+        if self.decision_point is None:
+            moved = np.inf
+        else:
+            moved = np.hypot(self.pose[0] - self.decision_point[0], self.pose[1] - self.decision_point[1])
+        path_blocked = (self.selected_direction is not None and moved < 0.15
+                        and blocked(self.occupied_points, self.selected_direction, self.L, self.W, d=0.15 - moved))
+        if self.selected_direction is None or moved >= 0.15 or path_blocked:
+            self.selected_direction = best_direction(self.visited_points, self.feasible_directions, self.pose,
+                                                     self.goal_direction, self.R, self.visited_weight)
+            self.decision_point = (self.pose[0], self.pose[1])
+
+        if self.selected_direction is None:
+            self.move_2D(0.0, 0.0, 0.0)          # no feasible direction: stop
+        else:
+            theta = self.selected_direction
+            self.move_2D(self.speed * np.cos(theta), self.speed * np.sin(theta), 0.0)                
             
 
 
