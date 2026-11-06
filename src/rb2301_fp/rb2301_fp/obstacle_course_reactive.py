@@ -130,8 +130,8 @@ class ObstacleCourseNode(Node):
         self.feasible_directions  = []
 
         self.goal_direction = np.deg2rad(315) #in degrees
-        self.R = 0.2 #the maximum radius that counts towards proximity score
-        self.visited_weight = 5 #weight for proximity in calculating score for which direction to travel in
+        self.R = 0.4 #the maximum radius that counts towards proximity score
+        self.visited_weight = 1 #weight for proximity in calculating score for which direction to travel in
 
         self.visited_points = []
         self.tick = 0
@@ -249,8 +249,9 @@ def best_direction(visited_points,feasible_directions, current_pose,goal_directi
         goal_score = np.cos(theta - goal_direction)
 
         d = np.hypot(visited[:, 0] - px, visited[:, 1] - py)            # distance from the 15 cm spot to each visited point
+        d = d[(d<=0.40)] #only consider those 40cm or closer 
         # count nearest visited point only
-        proximity_score = -visited_weight * max(0.0, R - d.min()) if len(d) else 0.0
+        proximity_score = -visited_weight * (sum(R - d)/(R*len(d))) if len(d) else 0.0
 
         score = goal_score + proximity_score      # computed for this theta as above
         if score > best_score:
