@@ -334,7 +334,52 @@ Real-robot mode (720-reading scans, maze-frame poses, start headings 96.3° / 0�
   - The real pendulums' speed is unknown. The test pendulums swing with a 2.6–4.5 s period; slower real ones would make the crossing much safer.
 - **Planned, to be implemented later:** pendulum period detection. While waiting at a line, measure each pendulum's period from its passes through the lane. Predict when it will next reach the lane, and only cross if the predicted clear time is longer than the crossing time (about 1.4 s).
 
+### Real-robot version (2026-11-06, still Claude's reference code)
+The user asked for heading control and whatever else the reference needed to run on the real robot.
+1. **Heading hold:** every movement goes through `drive()`. It turns at 1.5 × the heading error (in radians), up to 0.5 rad/s, and only moves when within 10° of the target heading.
+   - **Why:** the robot must never rotate. All the logic assumes the robot's frame stays lined up with the course, and on the real robot the heading drifts.
+2. **Start-up checks** (real robot only):
+   - **Spin check:** turn left at 0.4 rad/s for up to 2 s; the heading must rise by 3°. **Why:** if the heading's sign were reversed, heading hold would spin the robot.
+   - **Square up with the walls** (`wall_alignment`): try turns up to ±25° and pick the one where the LiDAR points line up most sharply with the robot's axes. **Why:** the robot is never placed exactly straight.
+   - **Heading check:** slide 10 cm in the direction with the most room, and compare the way the robot actually moved with the Optitrack heading. If they differ by more than 15°, use the measured heading. **Why:** a wrong `heading_offset_deg` would corrupt all the world-frame maths (LiDAR points, visited positions, pendulum lines). The 15° threshold is there because over 10 cm the measurement scatters by several degrees: in the 2D test, an 8° error was measured as anything from 4.5° to 12°.
+3. **Stop if the pose or LiDAR stops updating** for 0.5 s, and carry on when the data comes back.
+4. **Motion test:** an `inf` reading counts as "can't tell". **Why:** real LiDARs report missed returns as `inf`, which would otherwise look like something moving.
+5. **The course rotation doesn't matter.** No absolute direction is used anywhere. The real course's forward direction is about +96° in the maze frame, which is a +96° rotation from the Gazebo axes.
+
+### More problems and fixes
+- **P14: the spin check failed on the real robot** with "-0.0 deg": the heading didn't change during a 0.5 s turn at 0.25 rad/s. Either the base didn't respond to that short, slow turn, or the pose didn't follow.
+  - **Fix:** turn at 0.4 rad/s for up to 2 s, pass at +3°, and say which failure it was: "didn't turn" or "heading went the wrong way".
+  - **Observed (user):** after the update, the robot started and ran on the real robot, including the pendulum part.
+- **P15: pendulums with small swings (user, real robot).** After swinging out of the robot's way, a pendulum came back very soon and hit the robot while it was crossing; or its swing was so small that it never fully left the robot's lane. The user's observation for the fix: "if the amplitude of the swing is small, there would be lots of free space on the left/right of the swinging obstacle that never gets hit by the obstacle."
+  - **Why:** a pendulum's period hardly depends on its amplitude. A small swing comes back just as soon, but spends more of each period in front of the robot.
+  - **Fix 1, go around the swing:** while waiting, record the pendulum's sideways range from its moving points over the last 5 s. After watching for 3 s, if there's room beside that range for the robot plus 10 cm on each side, slide sideways (still short of the line) and cross there. If the swing grows into that lane, give it up.
+  - **Fix 2, only time a crossing when the gap is long enough:** measure how long the lane stays clear on each swing, separately for each side the pendulum leaves to. Only take "the pendulum just left the lane" if that clear time, minus the time since it left, is at least the crossing time (about 1.7 s) plus 0.3 s.
+- **P16: small swings went undetected in the 2D test.** The robot drove straight through without finding a line. Slow swings uncover too few points between scans 0.1 s apart.
+  - **Fix:** find lines by comparing each scan with the one from 0.3 s earlier. Walls still never become see-through, so this doesn't add false movement: with no pendulums and with noise, there were no false crossings.
+- **P17: watching kept restarting.** The robot started watching a line from scratch every time the line's estimated position moved slightly closer.
+  - **Fix:** track the line itself rather than its position.
+- **P18: with wide, fast swings, fix 2 can wait forever.** If the swing covers the whole corridor, there's no room beside it, and the lane may never stay clear long enough.
+  - **Switch:** `self.max_wait` = seconds to wait at one line before taking the old gamble. The default `None` waits as long as it takes.
+
+**Results** (2D, real-robot mode, 12 layouts each; no wall or obstacle contacts in any run):
+
+| Pendulums | `max_wait` | Reached the goal | Runs with no pendulum contact |
+|---|---|---|---|
+| small swings (half-width 0.10–0.20 m) | None | 12/12 (all crossed beside the swing) | 12/12 |
+| medium swings (0.20–0.35 m) | None | 11/12 (1 still waiting) | 12/12 |
+| small to medium, with off-angle start, wrong heading, drift and noise | None / 20 s | 11/12 / 12/12 | 12/12 / 12/12 |
+| wide swings | None | 4/12 (the rest still waiting) | 12/12 |
+| wide swings | 20 s | 12/12 | 7/12 |
+
 ## V2-D2: Write my own reactive controller instead of using Claude's reference (2026-11-06)
 - **Decision:** the user will write their own reactive controller from the original template (`obstacle_course_template.py`, commit `88d3f81`), rather than use Claude's reference code (V2-REF).
 - **Why (in the user's words):** "i dont want to use the one that you have just coded without being able to do it myself."
 - **Planned:** pendulum period detection, to be implemented later (see V2-REF, "Planned").
+
+## V2-R1: Real-robot runs of Claude's reactive reference code (2026-11-06)
+- **Code:** Claude's reference code (V2-REF), copied into the user's local `obstacle_course2.py`.
+- **Observed:**
+  1. **First start:** "START-UP CHECK FAILED: turning left changed the heading by -0.0 deg". Fixed by P14.
+  2. **After that:** the robot starts and runs on the real robot, including the pendulum part. But it doesn't always clear pendulums with small swings (P15).
+  3. **With fixes 1 and 2 (P15–P18, `max_wait` None):** "it looks good now". It crossed the first pendulum, which had "a pretty small amplitude, so there was a big clearing on the right that it can cross through". Then it detected and stopped in front of the second pendulum, "which swings almost the full width of the corridor, then it just stopped there without moving at all for a long time". The terminal did not say it had reached the goal, so it hadn't wrongly decided it was finished.
+- **Fix:**
