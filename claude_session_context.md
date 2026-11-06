@@ -51,6 +51,9 @@ Saved 2026-11-03, last updated 2026-11-06 (just before a context compaction the 
   - Ablation of Claude's reference (21/21): look only 15 cm -> 13/21; no memory -> 12/21; no room bonus, no hysteresis, no lanes -> 20/21 each.
   - Plan agreed: copy the reference part by part. Step 0 = crash fix plus weight about 0.1. Step 1 = free distance plus room bonus (`w_free * min(free, 1)`); Claude gave a stepped `free_distance` like `blocked()`. Then: memory at min(0.4, free), novelty bonus, hysteresis 0.2, lanes.
   - **The user put free distance ON HOLD; they think hysteresis alone may be enough and will try that next.** Don't push free distance.
+  - `4d3f96f`: hysteresis tried. Bug: a tuple assignment listed `best_score` twice, so it stayed -inf and the LAST feasible direction always won (the robot drove backwards).
+  - `8fbfe1b`: fixed. The user said they had fixed it themselves but used Claude's version of the hysteresis block because it's shorter and more readable. `visited_weight` is 0.1. The printed goal and proximity scores are still the last direction's (print only).
+    Harness on 21 layouts: with hysteresis 20/21 (seed 4 ends at (3.42, -3.13) at 60 s), mean 30.1 s, max 51.7 s; with hysteresis off, 21/21, mean 30.1 s, max 57.8 s.
 - `setup.py` on `main` has no entry point for `obstacle_course_reactive` yet. The user's local `setup.py` may differ.
 
 ### C) After compaction
