@@ -48,6 +48,7 @@ Saved 2026-11-03, last updated 2026-11-06 (just before a context compaction the 
    - `git clone -q --branch claude/reactive-version git@github.com:SuHuaiYu9/rb2301_final_CA.git "$SP/claude_branch"`
    - and the user's repo: `git clone --depth 10 https://github.com/SuHuaiYu9/rb2301_final_CA.git "$SP/user_repo"`.
    - To keep editing the reference, take the file from `claude_tools/reference/`. Earlier edits used a parts file plus `assemble.py` (template + helpers / init / timer blocks); if those are gone, edit the reference file directly. The template is `git show 7419524:src/rb2301_fp/rb2301_fp/obstacle_course.py` (identical to `obstacle_course_template.py`).
+   - Editing helpers are saved in `claude_tools/dev/` (parts file for `d17d32a`, `assemble.py`, `summ_real.py`, template); see its README.
 2. Run the harness with `/usr/bin/python3` (miniconda's python3 has no numpy).
 3. Key runners:
    - `real_reactive_study.py`: real-robot mode. Settings `AMP=lo,hi` (swing half-width) and `HX` (pendulum half-thickness, e.g. 0.015 for 3 cm).
