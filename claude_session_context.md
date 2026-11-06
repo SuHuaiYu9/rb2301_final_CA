@@ -4,7 +4,7 @@ Saved 2026-11-03, last updated 2026-11-06 (just before a context compaction the 
 **This copy is for version 2 (the reactive code).** It lives on branch `claude/reactive-version` (with the report log and `claude_tools/`). Version 1 has its own copy on `claude/final-project-review-3m8r3v`, kept by a different chat. The user's own code is on `main`, which Claude must never change.
 
 ## 00. CURRENT STATE: read this first (2026-11-06)
-**There are two code files in play. Right now we are working on `obstacle_course2.py`.**
+**There are two code files in play. `obstacle_course2.py` is parked at `1b8e7c1`; right now we are working on the user's own `obstacle_course_reactive.py` (section B).**
 
 ### A) `obstacle_course2.py`: Claude's reactive reference code, run by the user on the REAL robot (current focus)
 - **Where it lives:** Claude's copy is `claude_tools/reference/obstacle_course_reactive.py` on this branch. The user copies it over their local `obstacle_course2.py` with:
@@ -12,6 +12,7 @@ Saved 2026-11-03, last updated 2026-11-06 (just before a context compaction the 
   The user's `obstacle_course2.py` is local and unpushed (GitHub `main` still has the old grid version from `b66d56e`). It has a local `setup.py` entry point `obstacle_course2`; the user then copies it to the robot and runs `colb`.
 - **Claude never edits the user's files.** Change Claude's reference on this branch, test it in `claude_tools/`, push, send it with SendUserFile, and give the `git show` command above.
 - **CURRENT VERSION = `1b8e7c1`, reverted a second time on 2026-11-06.** After pulling `d17d32a`, the user said: "this version doesnt even work properly in simulation... hmm, can we revert back one more commit?" So the reference is now `1b8e7c1` (real-robot version plus the spin-check fix). It does NOT have the `d17d32a` changes: no crossing beside small swings (P15 fix 1), no timing of only long-enough gaps (fix 2), the motion test compares with the previous scan instead of 0.3 s back, and there is no `max_wait`. The user hasn't said what went wrong with `d17d32a` in simulation; ask before re-applying any of it.
+  - **User, after pulling `1b8e7c1`:** "it works pretty well on the simulation now, unlike the 2 newer ones. we will keep this one for now." Then they went back to working on their own `obstacle_course_reactive.py` (section B).
 - **Earlier: `d17d32a`, reverted on 2026-11-06.** The user: "this newest version of code is no good. it has a lot of problems. we should revert back to the last version", and `d17d32a` "was working pretty well until your last edit".
   - The bad version was `3d4b88f` (P19–P22: `ignored` flag, wait near a wall, walls out of `line_sides`, late-found lines, status print, `line_depth` 0.08). Its parts file is saved as `$SP/reactive_parts_3d4b88f.py` if the scratchpad survives; otherwise use `git show 3d4b88f:claude_tools/reference/obstacle_course_reactive.py`.
   - The user didn't say which problems. **Ask them before re-applying any of it.**
