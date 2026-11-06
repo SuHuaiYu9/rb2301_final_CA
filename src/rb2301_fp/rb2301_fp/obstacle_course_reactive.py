@@ -147,7 +147,7 @@ class ObstacleCourseNode(Node):
             self.speed = 0.3  
             self.test_distance = 0.10
             self.R = 0.15 #the maximum radius that counts towards proximity score
-            self.visited_weight = 0.1 #weight for proximity in calculating score for which direction to travel in
+            self.visited_weight = 0.2 #weight for proximity in calculating score for which direction to travel in
             self.L = 0.1075  #robot's half length
             self.W = 0.095 #robot's half width
             self.lidar_offset = 0.041    
@@ -254,9 +254,9 @@ class ObstacleCourseNode(Node):
             result = best_direction(self.visited_points, self.feasible_directions, self.pose,
                                     self.goal_direction, self.R, self.visited_weight,self.test_distance,
                                     self.occupied_points, self.L, self.W, self.w_free)
-            new_theta, new_score = result[0], result[3]
+            new_theta, new_score, scores= result[0], result[3],result[4]
             keep_old = (self.last_best_theta in self.feasible_directions
-                        and new_score <= self.last_best_score + 0.2)     # new one isn't better by more than 0.2
+                        and new_score <= scores[self.last_best_score] + 0.2)     # new one isn't better by more than 0.2
             if keep_old:
                 self.selected_direction = self.last_best_theta
             else:
@@ -281,6 +281,7 @@ def best_direction(visited_points,feasible_directions, current_pose,goal_directi
     heading = np.deg2rad(current_pose[2])
     visited = np.array(visited_points).reshape(-1, 2)          # (n, 2) array of past (x, y)
     best_thetas, best_score, goal_score, proximity_score = None, -np.inf,None,None
+    scores = {}
     for theta in feasible_directions:
         px = current_pose[0] +  test_distance* np.cos(heading + theta)
         py = current_pose[1] + test_distance * np.sin(heading + theta)
@@ -293,10 +294,11 @@ def best_direction(visited_points,feasible_directions, current_pose,goal_directi
         room_score = w_free * free_distance(occupied_points, theta, L, W)      # how far it can go this way, up to 1 m
 
         score = goal_score + proximity_score +room_score     # computed for this theta as above
+        scores[theta] = score
         if score > best_score:
             best_thetas, goal_score, proximity_score, best_score = theta,  goal_score, proximity_score,score
     
-    return (best_thetas,goal_score,proximity_score,best_score)
+    return (best_thetas,goal_score,proximity_score,best_score,scores)
         #note:
         # we need heading hold, so robot's heading is always aligned, since real robot will drift. also, the real course axes are rotated
         # by about -90 degrees from the gazebo axes, so we need to account for that as well. 
