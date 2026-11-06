@@ -127,7 +127,7 @@ class ObstacleCourseNode(Node):
         
         self.feasible_directions  = []
 
-        self.goal_direction = np.deg2rad(315) #in degrees
+        self.goal_direction = np.deg2rad(337.5) #in degrees
         
 
         self.visited_points = []
@@ -154,6 +154,7 @@ class ObstacleCourseNode(Node):
             self.w_free = 1.0 #weight for room: w_free * free distance (up to 1 m)
             self.w_new = 1.5   #weight for novelty: bonus for heading somewhere the robot hasn't been
             self.probe = 0.4   #novelty is judged at the point up to 0.4 m along each direction (less if blocked sooner)
+            self.hysteresis = 0.1
         else:
             self.speed = 0.3  
             self.test_distance = 0.10
@@ -165,6 +166,7 @@ class ObstacleCourseNode(Node):
             self.w_free = 1.0 #weight for room: w_free * free distance (up to 1 m)
             self.w_new = 1.5   #weight for novelty: bonus for heading somewhere the robot hasn't been
             self.probe = 0.4   #novelty is judged at the point up to 0.4 m along each direction (less if blocked sooner)
+            self.hysteresis = 0.1
 
 
 
@@ -260,7 +262,7 @@ class ObstacleCourseNode(Node):
                                     self.occupied_points, self.L, self.W, self.w_free,self.w_new,self.probe)
             new_theta, new_score, scores= result[0], result[3],result[4]
             keep_old = (self.last_best_theta in self.feasible_directions
-                        and new_score <= scores[self.last_best_theta] + 0.2)     # new one isn't better by more than 0.2
+                        and new_score <= scores[self.last_best_theta] + self.hysteresis)     # new one isn't better by more than 0.2
             if keep_old:
                 self.selected_direction = self.last_best_theta
             else:
@@ -295,7 +297,6 @@ def best_direction(visited_points,feasible_directions, current_pose,goal_directi
         d = d[(d<=R)] #only consider those Rcm or closer 
         # count nearest visited point only
         proximity_score = -visited_weight * sum(R - d)/R if len(d) else 0.0
-        room_score = w_free * free_distance(occupied_points, theta, L, W)      # how far it can go this way, up to 1 m
         free = free_distance(occupied_points, theta, L, W)          # how far it can go this way, up to 1 m
         room_score = w_free * free
 
