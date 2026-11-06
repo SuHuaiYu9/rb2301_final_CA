@@ -228,20 +228,15 @@ class ObstacleCourseNode(Node):
                         and blocked(self.occupied_points, self.selected_direction, self.L, self.W, d=0.15 - moved))
         if self.selected_direction is None or moved >= 0.15 or path_blocked:
             result = best_direction(self.visited_points, self.feasible_directions, self.pose,
-                                                     self.goal_direction, self.R, self.visited_weight)
-            if self.last_best_score is None:
-                self.last_best_score = result[3]
-                self.last_best_theta = result[0]
-                self.selected_direction = result[0]
-            elif result[3]>self.last_best_score and abs(result[3]-self.last_best_score)>0.2:
-                self.selected_direction = result[0]
-                self.last_best_score = result[3]
-                self.last_best_theta = result[0]
+                                    self.goal_direction, self.R, self.visited_weight)
+            new_theta, new_score = result[0], result[3]
+            keep_old = (self.last_best_theta in self.feasible_directions
+                        and new_score <= self.last_best_score + 0.2)     # new one isn't better by more than 0.2
+            if keep_old:
+                self.selected_direction = self.last_best_theta
             else:
-                if self.last_best_theta in self.feasible_directions:
-                    self.selected_direction = self.last_best_theta
-                else:
-                    self.selected_direction = result[0]
+                self.selected_direction = new_theta
+                self.last_best_theta, self.last_best_score = new_theta, new_score
             print(f"goal score:{result[1]},proximity score:{result[2]}")
             self.decision_point = (self.pose[0], self.pose[1])
 
@@ -273,7 +268,7 @@ def best_direction(visited_points,feasible_directions, current_pose,goal_directi
 
         score = goal_score + proximity_score      # computed for this theta as above
         if score > best_score:
-            best_thetas, best_score, goal_score, proximity_score,best_score= theta, score, goal_score, proximity_score,best_score
+            best_thetas, goal_score, proximity_score, best_score = theta,  goal_score, proximity_score,score
     
     return (best_thetas,goal_score,proximity_score,best_score)
         #note:
