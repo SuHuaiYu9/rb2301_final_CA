@@ -124,24 +124,45 @@ class ObstacleCourseNode(Node):
         self.pose = None
 
         self.last_scan = None
-        self.L = 0.115  #robot's half length
-        self.W = 0.11  #robot's half width
-        self.lidar_offset = 0.045    
+        
         self.feasible_directions  = []
 
         self.goal_direction = np.deg2rad(315) #in degrees
-        self.R = 0.15 #the maximum radius that counts towards proximity score
-        self.visited_weight = 0.1 #weight for proximity in calculating score for which direction to travel in
+        
 
         self.visited_points = []
         self.tick = 0
 
-        self.speed = 0.3                         # m/s
+                               # m/s
         self.selected_direction = None           # current direction (radians, robot frame)
         self.decision_point = None               # (x, y) where that direction was chosen
         self.last_best_score = None
         self.last_best_theta = None
+
         
+
+        
+
+        if is_simulation:
+            self.speed = 0.3  
+            self.test_distance = 0.10
+            self.R = 0.15 #the maximum radius that counts towards proximity score
+            self.visited_weight = 0.1 #weight for proximity in calculating score for which direction to travel in
+            self.L = 0.1075  #robot's half length
+            self.W = 0.095 #robot's half width
+            self.lidar_offset = 0.041    
+            self.w_free = 1.0 #weight for room: w_free * free distance (up to 1 m)
+        else:
+            self.speed = 0.3  
+            self.test_distance = 0.10
+            self.R = 0.15 #the maximum radius that counts towards proximity score
+            self.visited_weight = 0.1 #weight for proximity in calculating score for which direction to travel in
+            self.L = 0.115  #robot's half length
+            self.W = 0.11  #robot's half width
+            self.lidar_offset = 0.045
+            self.w_free = 1.0 #weight for room: w_free * free distance (up to 1 m)
+
+
 
     def sub_scan_callback(self, msg):
         """Scan subscriber"""
@@ -211,9 +232,10 @@ class ObstacleCourseNode(Node):
         self.occupied_points  = scan_to_points(self.last_scan,self.angle_step,self.lidar_offset)
 
         #then we check which of the 16 directions if feasible by seeing if we move in each direction by 15cm, would we hit anyt
-        self.feasible_directions = feasible_directions(self.occupied_points,self.L,self.W) #directions given in radians CCW from robot direction
+        self.feasible_directions = feasible_directions(self.occupied_points,self.L,self.W,self.test_distance) #directions given in radians CCW from robot direction
         if len(self.feasible_directions)==0:
             print("no feasible directions")
+            self.move_2D(0,0,0)
             return
         self.tick += 1
         if self.tick % 1 == 0:
@@ -226,11 +248,12 @@ class ObstacleCourseNode(Node):
             moved = np.inf
         else:
             moved = np.hypot(self.pose[0] - self.decision_point[0], self.pose[1] - self.decision_point[1])
-        path_blocked = (self.selected_direction is not None and moved < 0.15
-                        and blocked(self.occupied_points, self.selected_direction, self.L, self.W, d=0.15 - moved))
-        if self.selected_direction is None or moved >= 0.15 or path_blocked:
+        path_blocked = (self.selected_direction is not None and moved < self.test_distance
+                        and blocked(self.occupied_points, self.selected_direction, self.L, self.W, d=self.test_distance - moved))
+        if self.selected_direction is None or moved >= self.test_distance or path_blocked:
             result = best_direction(self.visited_points, self.feasible_directions, self.pose,
-                                    self.goal_direction, self.R, self.visited_weight)
+                                    self.goal_direction, self.R, self.visited_weight,self.test_distance,
+                                    self.occupied_points, self.L, self.W, self.w_free)
             new_theta, new_score = result[0], result[3]
             keep_old = (self.last_best_theta in self.feasible_directions
                         and new_score <= self.last_best_score + 0.2)     # new one isn't better by more than 0.2
@@ -254,21 +277,22 @@ class ObstacleCourseNode(Node):
 
         ###### INSERT CODE HERE ######
 
-def best_direction(visited_points,feasible_directions, current_pose,goal_direction,R,visited_weight):
+def best_direction(visited_points,feasible_directions, current_pose,goal_direction,R,visited_weight,test_distance,occupied_points, L, W, w_free):
     heading = np.deg2rad(current_pose[2])
     visited = np.array(visited_points).reshape(-1, 2)          # (n, 2) array of past (x, y)
     best_thetas, best_score, goal_score, proximity_score = None, -np.inf,None,None
     for theta in feasible_directions:
-        px = current_pose[0] + 0.15 * np.cos(heading + theta)
-        py = current_pose[1] + 0.15 * np.sin(heading + theta)
+        px = current_pose[0] +  test_distance* np.cos(heading + theta)
+        py = current_pose[1] + test_distance * np.sin(heading + theta)
         goal_score = np.cos(theta - goal_direction)
 
         d = np.hypot(visited[:, 0] - px, visited[:, 1] - py)            # distance from the 15 cm spot to each visited point
         d = d[(d<=R)] #only consider those Rcm or closer 
         # count nearest visited point only
         proximity_score = -visited_weight * sum(R - d)/R if len(d) else 0.0
+        room_score = w_free * free_distance(occupied_points, theta, L, W)      # how far it can go this way, up to 1 m
 
-        score = goal_score + proximity_score      # computed for this theta as above
+        score = goal_score + proximity_score +room_score     # computed for this theta as above
         if score > best_score:
             best_thetas, goal_score, proximity_score, best_score = theta,  goal_score, proximity_score,score
     
@@ -279,16 +303,31 @@ def best_direction(visited_points,feasible_directions, current_pose,goal_directi
 
 
 
-def feasible_directions(occupied_points,L,W):
+def feasible_directions(occupied_points,L,W,test_distance):
     feasible_directions = []
     for idx in range(16):
         theta = np.deg2rad(idx*22.5)
-        if not blocked(occupied_points,theta,L,W):
+        if not blocked(occupied_points,theta,L,W,test_distance):
             feasible_directions.append(theta)
     return feasible_directions
 
 
-def blocked(occupied_points, theta, L, W, d=0.15, step=0.01):
+def free_distance(occupied_points, theta, L, W, max_d=1.0, step=0.01):
+    '''How far the robot can slide along theta, up to max_d (same stepped rectangles as blocked()).'''
+    x, y = occupied_points[:, 0], occupied_points[:, 1]
+    outside_body = ~((np.abs(x) <= L) & (np.abs(y) <= W))      # ignore points inside the robot's own body
+    c, s = np.cos(theta), np.sin(theta)
+    for t in np.arange(step, max_d + 1e-9, step):
+        cx, cy = t * c, t * s                                    # robot centre after sliding t
+        # grow the rectangle by step only on the side(s) it is moving towards
+        x_lo, x_hi = cx - L - (step if c < -1e-9 else 0), cx + L + (step if c > 1e-9 else 0)
+        y_lo, y_hi = cy - W - (step if s < -1e-9 else 0), cy + W + (step if s > 1e-9 else 0)
+        if np.any(outside_body & (x >= x_lo) & (x <= x_hi) & (y >= y_lo) & (y <= y_hi)):
+            return t - step                                      # last distance that was still clear
+    return max_d
+
+
+def blocked(occupied_points, theta, L, W, d, step=0.01):
     '''True if sliding d along theta would hit a LiDAR point: checks the robot's rectangle at every step along the way.'''
     #L is the half length of robot, W is half width of robot, d is how far robot moves, step is the smaller discretized step distance we test
     x, y = occupied_points[:, 0], occupied_points[:, 1]
