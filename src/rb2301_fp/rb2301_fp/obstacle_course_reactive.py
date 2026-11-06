@@ -130,8 +130,8 @@ class ObstacleCourseNode(Node):
         self.feasible_directions  = []
 
         self.goal_direction = np.deg2rad(315) #in degrees
-        self.R = 0.4 #the maximum radius that counts towards proximity score
-        self.visited_weight = 1 #weight for proximity in calculating score for which direction to travel in
+        self.R = 0.15 #the maximum radius that counts towards proximity score
+        self.visited_weight = 10 #weight for proximity in calculating score for which direction to travel in
 
         self.visited_points = []
         self.tick = 0
@@ -212,7 +212,7 @@ class ObstacleCourseNode(Node):
         self.feasible_directions = feasible_directions(self.occupied_points,self.L,self.W) #directions given in radians CCW from robot direction
         
         self.tick += 1
-        if self.tick % 10 == 0:
+        if self.tick % 1 == 0:
             self.visited_points.append((self.pose[0], self.pose[1]))
         
         
@@ -226,13 +226,20 @@ class ObstacleCourseNode(Node):
                         and blocked(self.occupied_points, self.selected_direction, self.L, self.W, d=0.15 - moved))
         if self.selected_direction is None or moved >= 0.15 or path_blocked:
             self.selected_direction = best_direction(self.visited_points, self.feasible_directions, self.pose,
-                                                     self.goal_direction, self.R, self.visited_weight)
+                                                     self.goal_direction, self.R, self.visited_weight)[0]
+            print(best_direction(self.visited_points, self.feasible_directions, self.pose,
+                                                     self.goal_direction, self.R, self.visited_weight)[1])
             self.decision_point = (self.pose[0], self.pose[1])
 
         if self.selected_direction is None:
             self.move_2D(0.0, 0.0, 0.0)          # no feasible direction: stop
+            print("nowehre to go")
         else:
             theta = self.selected_direction
+            # if theta == np.deg2rad(90) or theta == np.deg2rad(180):
+            #     print("dropping shit")
+            #     self.visited_points.append((self.pose[0], self.pose[1]))
+
             self.move_2D(self.speed * np.cos(theta), self.speed * np.sin(theta), 0.0)                
             
 
@@ -249,14 +256,14 @@ def best_direction(visited_points,feasible_directions, current_pose,goal_directi
         goal_score = np.cos(theta - goal_direction)
 
         d = np.hypot(visited[:, 0] - px, visited[:, 1] - py)            # distance from the 15 cm spot to each visited point
-        d = d[(d<=0.40)] #only consider those 40cm or closer 
+        d = d[(d<=R)] #only consider those Rcm or closer 
         # count nearest visited point only
-        proximity_score = -visited_weight * (sum(R - d)/(R*len(d))) if len(d) else 0.0
+        proximity_score = -visited_weight * sum(R - d)/R if len(d) else 0.0
 
         score = goal_score + proximity_score      # computed for this theta as above
         if score > best_score:
             best_thetas, best_score = theta, score
-    return best_thetas
+    return (best_thetas, goal_score)
         #note:
         # we need heading hold, so robot's heading is always aligned, since real robot will drift. also, the real course axes are rotated
         # by about -90 degrees from the gazebo axes, so we need to account for that as well. 
