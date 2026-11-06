@@ -1,25 +1,60 @@
 # Claude session context: RB2301 final project (read this first in a new chat or after a context reset)
 
-Saved 2026-11-03, last updated 2026-11-05. It lets work continue seamlessly after context compaction **or in a new chat**.
-**This copy is for version 2 (the reactive code).** It lives on branch `claude/reactive-version` (with the report log and `claude_tools/`). Version 1 has its own copy on `claude/final-project-review-3m8r3v`, kept by a different chat (section 00). The user's own code is on `main`, which Claude must never change.
+Saved 2026-11-03, last updated 2026-11-06 (just before a context compaction the user asked for). It lets work continue seamlessly after compaction **or in a new chat**.
+**This copy is for version 2 (the reactive code).** It lives on branch `claude/reactive-version` (with the report log and `claude_tools/`). Version 1 has its own copy on `claude/final-project-review-3m8r3v`, kept by a different chat. The user's own code is on `main`, which Claude must never change.
 
-## 00. Current task: version 2, the reactive code (from 2026-11-05, a new chat started for it)
-- **Goal:** help the user create a **new version of the code**, based on the current codebase (`main` at `676268b`, which ran the full course in Gazebo: S1 in the log), using a different approach: **no hard-coded door x-value and no hard-coded global goal.**
-- **Why, in the user's words:** "the prof just said that he would prefer if the whole project is reactive instead of harcoded."
-- **The user designs the new approach; Claude translates it into code.** All the ground rules in section 1 still apply.
-  - The user hasn't described the new approach yet, so **don't propose one. Ask for or wait for their plan.**
-  - Critique their logic only if they explicitly ask.
-- **Where the new version lives (the user's decision, 2026-11-05):** a new file, `src/rb2301_fp/rb2301_fp/obstacle_course2.py`, on `main`. Version 1 stays in `obstacle_course.py`. Claude never edits `main` or the user's files.
-- **Hard-coded values in the current code, for reference only** (a list of facts, not advice; the user named only the door x and the goal):
-  - `self.global_goal`: used for the distance in `select_target` / `select_target2`, and for the stop at the goal after the door;
-  - `self.door_x` = 3.4 (Gazebo), and `cx >= 2.9` in the real branch: switch to the after-door logic;
-  - `self.origin` with `map_size_x` / `map_size_y` (6.02 × 4.5 m): where the grid sits;
-  - LiDAR offsets 0.114 (Gazebo) and 0.045 (real); centre offset 0.0725;
-  - after the door: the 0.25 m clearance, the front quarters `last_scan[:91]` and `last_scan[270:]`, and `move_2D(0.5, 0, 0)`.
-- **Two chats, two branches (set up 2026-11-05):**
-  - the old chat (session `01VT1WaLnxVP53q3RnFi24Uu`) is **still in use, for version 1 only** (`obstacle_course.py`). It logs on `claude/final-project-review-3m8r3v`;
-  - this chat handles version 2 and logs **only** on `claude/reactive-version`. Never push to the other branch.
-  - The version 2 log is a continuation of the version 1 log: it starts with a copy of the version 1 entries (as of commit `329a919`), and version 2 entries go under the heading "Version 2 (reactive) starts here" at the end.
+## 00. CURRENT STATE: read this first (2026-11-06)
+**There are two code files in play. Right now we are working on `obstacle_course2.py`.**
+
+### A) `obstacle_course2.py`: Claude's reactive reference code, run by the user on the REAL robot (current focus)
+- **Where it lives:** Claude's copy is `claude_tools/reference/obstacle_course_reactive.py` on this branch. The user copies it over their local `obstacle_course2.py` with:
+  `cd ~/Downloads/rb2301_final_project-main && git fetch -q origin && git show origin/claude/reactive-version:claude_tools/reference/obstacle_course_reactive.py > src/rb2301_fp/rb2301_fp/obstacle_course2.py`
+  The user's `obstacle_course2.py` is local and unpushed (GitHub `main` still has the old grid version from `b66d56e`). It has a local `setup.py` entry point `obstacle_course2`; the user then copies it to the robot and runs `colb`.
+- **Claude never edits the user's files.** Change Claude's reference on this branch, test it in `claude_tools/`, push, send it with SendUserFile, and give the `git show` command above.
+- **CURRENT VERSION = `d17d32a`, reverted on 2026-11-06.** The user: "this newest version of code is no good. it has a lot of problems. we should revert back to the last version", and `d17d32a` "was working pretty well until your last edit".
+  - The bad version was `3d4b88f` (P19–P22: `ignored` flag, wait near a wall, walls out of `line_sides`, late-found lines, status print, `line_depth` 0.08). Its parts file is saved as `$SP/reactive_parts_3d4b88f.py` if the scratchpad survives; otherwise use `git show 3d4b88f:claude_tools/reference/obstacle_course_reactive.py`.
+  - The user didn't say which problems. **Ask them before re-applying any of it.**
+- **What `d17d32a` contains:** direction scoring (16 directions, goal bias −45°, room bonus, novelty, time-spent penalty, sideways lane shifts, 0.15 m commitment); seen-past motion test comparing each scan with the one 0.3 s back; pendulum lines; stopping short (standoff 0.08); waiting; crossing; final approach and goal; heading hold (`drive()`); real start-up checks (spin check at 0.4 rad/s for up to 2 s, wall alignment, heading check); stop on stale data; P15 fix 1 (cross beside a small swing) and fix 2 (time only long-enough gaps); `max_wait` = None; `line_depth` = 0.20 by default (the user ran 0.05 on the robot: their pendulum is about 3 cm thick).
+- **Known issues in `d17d32a`** (tell the user if relevant; don't fix without asking):
+  1. **False-goal bug (P19):** a static obstacle mistaken for a pendulum line is ignored by marking it 'crossed', which triggers the final approach and then a false "goal reached". Seen on the real robot. Minimal fix: a separate 'ignored' flag, kept out of `ahead`, `maybe`, the crossed marking and the final-approach check (that part of `3d4b88f` was verified by `harness/false_line_repro.py`).
+  2. **Full-width swing:** the robot waits indefinitely (`max_wait` None) when there's no room beside the swing and the lane is never clear long enough (needs crossing time + 0.3 s; with `line_depth` 0.20 the crossing is about 1.7 s). Options discussed: `max_wait`, a smaller `line_depth`, waiting near a wall.
+  3. **Wall in the lane (P21):** if the robot waits within about 5 cm of a wall, the wall counts as "in the lane", so it never goes.
+  4. **Late-found second line (P22):** a small swing hidden behind the first pendulum can be found too late.
+- **Real-robot facts from these runs:**
+  - At the start, `pose[2]` is about +96° when the robot faces along the course, so the course is rotated +96° from the Gazebo axes. Claude's earlier "180° heading error" suspicion was wrong: it came from the R1 placeholder goal.
+  - The pendulum is about 3 cm thick.
+  - The original spin check (0.25 rad/s for 0.5 s) failed with "-0.0 deg"; it's fixed in `1b8e7c1`.
+  - Real runs: it works, including the pendulums; small swings were then fixed with `d17d32a`; next, the robot crossed pendulum 1 beside its swing and waited forever at the full-width pendulum 2. With `line_depth` 0.05, a false pendulum line led to a false goal.
+- **Planned:** pendulum period detection.
+
+### B) `obstacle_course_reactive.py`: the user's OWN reactive code (on GitHub `main`, latest `4002047`)
+- **Built from the template** (`obstacle_course_template.py`, `88d3f81`). **Ground rules fully apply:** the user designs, Claude translates. No redesign unless asked. Check pushes with `py_compile` plus the harness (copy the file as `obstacle_course.py` into a scratch folder, or import `obstacle_course_reactive`).
+- **The user's plan** (docstring in the file): 16 directions at 22.5°. Feasible = moving 15 cm doesn't hit an obstacle. Score = goal direction + a linear negative proximity to visited points (recorded every 10 ticks), evaluated at the 15 cm spot. Highest wins. Dynamic obstacles: something that was hit before is no longer hit, with geometry to find the matching new ray.
+- **Done so far:**
+  - `scan_to_points` (plain loop, angle step 2π/len computed each tick, `lidar_offset` 0.045);
+  - `blocked` (stepped rectangles, 1 cm steps, grown by the full step);
+  - `feasible_directions`;
+  - `best_direction`: cos goal score with `goal_direction` = `np.deg2rad(315)`, R = 0.2, `visited_weight` = 5, nearest visited point only;
+  - visited points every 10 ticks;
+  - keep the direction for 15 cm, choose again early if the rest of the move is blocked (`d = 0.15 - moved`);
+  - `move_2D(speed·cos, speed·sin)`, speed 0.3;
+  - `L` 0.115, `W` 0.11; no heading hold yet (the user noted it's needed for the real robot).
+- **Last check (`4002047`):** correct. In 40 s harness runs: seeds 0 and 3 fine; seed 5 ended at (1.17, −0.50), still in corridor 1. Claude offered to trace why; not answered.
+- **Next in the user's plan:** dynamic-obstacle (pendulum) detection, the user's "seen-past" idea. They asked about the ray-angle geometry, and Claude explained it (find the new ray that points at the old world point, compare with its neighbours, 10 cm margin).
+- `setup.py` on `main` has no entry point for `obstacle_course_reactive` yet. The user's local `setup.py` may differ.
+
+### C) After compaction
+1. Re-clone (the scratchpad gets wiped):
+   - `git clone -q --branch claude/reactive-version git@github.com:SuHuaiYu9/rb2301_final_CA.git "$SP/claude_branch"`
+   - and the user's repo: `git clone --depth 10 https://github.com/SuHuaiYu9/rb2301_final_CA.git "$SP/user_repo"`.
+   - To keep editing the reference, take the file from `claude_tools/reference/`. Earlier edits used a parts file plus `assemble.py` (template + helpers / init / timer blocks); if those are gone, edit the reference file directly. The template is `git show 7419524:src/rb2301_fp/rb2301_fp/obstacle_course.py` (identical to `obstacle_course_template.py`).
+2. Run the harness with `/usr/bin/python3` (miniconda's python3 has no numpy).
+3. Key runners:
+   - `real_reactive_study.py`: real-robot mode. Settings `AMP=lo,hi` (swing half-width) and `HX` (pendulum half-thickness, e.g. 0.015 for 3 cm).
+   - `reactive_study.py`: Gazebo mode.
+   - `false_line_repro.py`.
+   - Summary helper: tally GOAL at 0.2x m, contacts and crossings.
+4. Watch the user's terminal with `read_terminal` only if they ask. Gazebo and the robot run outside the app.
 
 ## 0. First steps in a new chat or after a context reset
 1. **Read this whole file, then `rb2301_final_report_log.md` and `claude_tools/README.md`.**

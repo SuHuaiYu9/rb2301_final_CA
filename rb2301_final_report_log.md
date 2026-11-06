@@ -397,6 +397,8 @@ The user asked for heading control and whatever else the reference needed to run
 
 With wide swings, the rest were still waiting when the 4-minute test ended (some crossed after about 2 minutes), because `max_wait` is None.
 
+- **Reverted (2026-11-06):** after trying the P19–P22 version on the real robot, the user said: "this newest version of code is no good. it has a lot of problems. we should revert back to the last version", and that the previous version "was working pretty well until your last edit". The reference was reverted to `d17d32a`, the version before P19–P22. P19–P22 above are kept for the record; none of them is in the current reference, so the false-goal bug (P19) is present again.
+
 ## V2-D2: Write my own reactive controller instead of using Claude's reference (2026-11-06)
 - **Decision:** the user will write their own reactive controller from the original template (`obstacle_course_template.py`, commit `88d3f81`), rather than use Claude's reference code (V2-REF).
 - **Why (in the user's words):** "i dont want to use the one that you have just coded without being able to do it myself."
