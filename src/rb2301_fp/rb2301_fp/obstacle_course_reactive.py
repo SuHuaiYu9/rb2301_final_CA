@@ -131,7 +131,7 @@ class ObstacleCourseNode(Node):
 
         self.goal_direction = np.deg2rad(315) #in degrees
         self.R = 0.15 #the maximum radius that counts towards proximity score
-        self.visited_weight = 10 #weight for proximity in calculating score for which direction to travel in
+        self.visited_weight = 0.1 #weight for proximity in calculating score for which direction to travel in
 
         self.visited_points = []
         self.tick = 0
@@ -139,6 +139,8 @@ class ObstacleCourseNode(Node):
         self.speed = 0.3                         # m/s
         self.selected_direction = None           # current direction (radians, robot frame)
         self.decision_point = None               # (x, y) where that direction was chosen
+        self.last_best_score = None
+        self.last_best_theta = None
         
 
     def sub_scan_callback(self, msg):
@@ -225,10 +227,22 @@ class ObstacleCourseNode(Node):
         path_blocked = (self.selected_direction is not None and moved < 0.15
                         and blocked(self.occupied_points, self.selected_direction, self.L, self.W, d=0.15 - moved))
         if self.selected_direction is None or moved >= 0.15 or path_blocked:
-            self.selected_direction = best_direction(self.visited_points, self.feasible_directions, self.pose,
-                                                     self.goal_direction, self.R, self.visited_weight)[0]
-            print(best_direction(self.visited_points, self.feasible_directions, self.pose,
-                                                     self.goal_direction, self.R, self.visited_weight)[1])
+            result = best_direction(self.visited_points, self.feasible_directions, self.pose,
+                                                     self.goal_direction, self.R, self.visited_weight)
+            if self.last_best_score is None:
+                self.last_best_score = result[3]
+                self.last_best_theta = result[0]
+                self.selected_direction = result[0]
+            elif result[3]>self.last_best_score and abs(result[3]-self.last_best_score)>0.2:
+                self.selected_direction = result[0]
+                self.last_best_score = result[3]
+                self.last_best_theta = result[0]
+            else:
+                if self.last_best_theta in self.feasible_directions:
+                    self.selected_direction = self.last_best_theta
+                else:
+                    self.selected_direction = result[0]
+            print(f"goal score:{result[1]},proximity score:{result[2]}")
             self.decision_point = (self.pose[0], self.pose[1])
 
         if self.selected_direction is None:
@@ -236,9 +250,6 @@ class ObstacleCourseNode(Node):
             print("nowehre to go")
         else:
             theta = self.selected_direction
-            # if theta == np.deg2rad(90) or theta == np.deg2rad(180):
-            #     print("dropping shit")
-            #     self.visited_points.append((self.pose[0], self.pose[1]))
 
             self.move_2D(self.speed * np.cos(theta), self.speed * np.sin(theta), 0.0)                
             
@@ -249,7 +260,7 @@ class ObstacleCourseNode(Node):
 def best_direction(visited_points,feasible_directions, current_pose,goal_direction,R,visited_weight):
     heading = np.deg2rad(current_pose[2])
     visited = np.array(visited_points).reshape(-1, 2)          # (n, 2) array of past (x, y)
-    best_thetas, best_score = None, -np.inf
+    best_thetas, best_score, goal_score, proximity_score = None, -np.inf,None,None
     for theta in feasible_directions:
         px = current_pose[0] + 0.15 * np.cos(heading + theta)
         py = current_pose[1] + 0.15 * np.sin(heading + theta)
@@ -262,8 +273,9 @@ def best_direction(visited_points,feasible_directions, current_pose,goal_directi
 
         score = goal_score + proximity_score      # computed for this theta as above
         if score > best_score:
-            best_thetas, best_score = theta, score
-    return (best_thetas, goal_score)
+            best_thetas, best_score, goal_score, proximity_score,best_score= theta, score, goal_score, proximity_score,best_score
+    
+    return (best_thetas,goal_score,proximity_score,best_score)
         #note:
         # we need heading hold, so robot's heading is always aligned, since real robot will drift. also, the real course axes are rotated
         # by about -90 degrees from the gazebo axes, so we need to account for that as well. 
