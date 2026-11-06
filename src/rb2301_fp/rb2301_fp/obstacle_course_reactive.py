@@ -129,6 +129,10 @@ class ObstacleCourseNode(Node):
         self.lidar_offset = 0.045    
         self.feasible_directions  = []
 
+        self.goal_direction = 315 #in degrees
+        self.R = 0.2 #the maximum radius that counts towards proximity score
+        self.visited_weight = 5 #weight for proximity in calculating score for which direction to travel in
+
         
 
     def sub_scan_callback(self, msg):
@@ -199,17 +203,45 @@ class ObstacleCourseNode(Node):
         self.occupied_points  = scan_to_points(self.last_scan,self.angle_step,self.lidar_offset)
 
         #then we check which of the 16 directions if feasible by seeing if we move in each direction by 15cm, would we hit anyt
-        self.feasible_directions = []
-        for idx in range(16):
-            theta = np.deg2rad(idx*22.5)
-            if not blocked(self.occupied_points,theta,self.L,self.W):
-                self.feasible_directions.append(theta)
+        self.feasible_directions = feasible_directions(self.occupied_points,self.L,self.W) #directions given in degrees CCW from robot direction
+        self.selected_direction = score(self.visited_points,self.feasible_directions,self.pose,self.goal_direction,self.R,self.visited_weight)
                 
             
 
 
         ###### INSERT CODE HERE ######
-                
+
+def score(visited_points,feasible_directions, current_pose,goal_direction,R,visited_weight,d=0.15):
+    heading = np.deg2rad(current_pose[2])
+    visited = np.array(visited_points).reshape(-1, 2)          # (n, 2) array of past (x, y)
+    
+    for theta in feasible_directions:
+        px = current_pose[0] + 0.15 * np.cos(heading + theta)
+        py = current_pose[1] + 0.15 * np.sin(heading + theta)
+        goal_score = np.cos(theta - goal_direction)
+
+        d = np.hypot(visited[:, 0] - px, visited[:, 1] - py)            # distance from the 15 cm spot to each visited point
+        # count nearest visited point only
+        proximity_score = -visited_weight * max(0.0, R - d.min()) if len(d) else 0.0
+
+        score = goal_score + proximity_score      # computed for this theta as above
+        if score > best_score:
+            best_thetas, best_score = theta, score
+    return best_thetas
+        #note:
+        # we need heading hold, so robot's heading is always aligned, since real robot will drift. also, the real course axes are rotated
+        # by about -90 degrees from the gazebo axes, so we need to account for that as well. 
+
+
+
+def feasible_directions(occupied_points,L,W):
+    feasible_directions = []
+    for idx in range(16):
+        theta = np.deg2rad(idx*22.5)
+        if not blocked(occupied_points,theta,L,W):
+            feasible_directions.append(theta)
+    return feasible_directions
+
 
 def blocked(occupied_points, theta, L, W, d=0.15, step=0.01):
     '''True if sliding d along theta would hit a LiDAR point: checks the robot's rectangle at every step along the way.'''
