@@ -111,7 +111,7 @@ Saved 2026-11-03, last updated 2026-11-06 (just before a context compaction the 
   - `R#` = a real-robot run;
   - `E#` = an error or crash;
   - `S#` = a milestone or success.
-  Version 2 entries use a **`V2-` prefix** so they never clash with version 1 numbers. Next free numbers: **V2-D6, V2-M3, V2-R2, V2-E1, V2-S1**. V2-REF problems now run up to P18. (V2-REF = Claude's reference code, a one-off entry type.)
+  Version 2 entries use a **`V2-` prefix** so they never clash with version 1 numbers. Next free numbers: **V2-D7, V2-M3, V2-R2, V2-E1, V2-S1**. V2-REF problems now run up to P18. (V2-REF = Claude's reference code, a one-off entry type.)
 - **Fields:** Decision/Observed, Why, Potential errors (only if they ask), Observed, Fix. Leave Fix blank unless they say what they did. Add a "Later:" line to an older entry when a value changes, as with D5.
 - **Record the user's own remarks for the report faithfully,** as with R1's "Remark for the report".
 - **Commit and push:** `git add rb2301_final_report_log.md && git commit -m "Log ..."` with the trailer lines **your own session's** system prompt gives (Co-Authored-By, plus your own Claude-Session URL, not the old one). Then push to your branch (section 0, step 2). Push access works.

@@ -471,3 +471,14 @@ With wide swings, the rest were still waiting when the 4-minute test ended (some
   A heavier penalty stops the turning back but is slower. It has no upper limit, so it also blocks the way back out of a dead end, and it only sees the next 10 cm. Novelty is capped at 1.5 and judged up to 40 cm out.
 - **User's question 2:** "why dont we just have a novelty score then, and dont use the proximity score anymore?" Harness, novelty with proximity 0.2 against novelty only: 21/21 (24.8 / 25.1 s) against **17/21 and 19/21**. The failed runs rocked between two spots for the full 90 s (170–240 turn-backs). Novelty bottoms out at 0 once everything nearby is visited, so it can't tell "once" from "100 times". The growing proximity penalty is what guarantees the robot eventually leaves. Claude's reference uses both for the same reason (V2-REF, P5).
 - **Result (`e390b2d`, harness):** 21/21; mean 24.8 s exact, 25.1 s noisy; slowest 38.0 s and 49.0 s; 0.3 and 0.7 turn-backs per run; no contacts. Claude's reference in the same test: 24.1 s mean, 37.7 s slowest.
+
+## V2-D6: Goal direction changed from 315° to 337.5° (own code, local change after `e390b2d`) (2026-11-07)
+- **Decision:** `self.goal_direction = np.deg2rad(337.5)`, i.e. forward and slightly right, instead of 315° (front-right).
+- **Why:** the user found that "the door/gap detection is not always very smooth". Claude's 2D measurement, over 21 layouts, from 0.6 m before the door to 0.3 m past it (a straight run takes about 3 s):
+  - **Times:** 3–7 s in 16 layouts, 15–23 s in 5, mean 7.9 s. Claude's reference: mean 5.9 s, 2 slow.
+  - **Cause 1:** the robot reached the door wall 2–5 mm off the gap's edge, so going straight clipped the edge and was blocked. In seed 19, the gap edge was at y = −2.435 and the robot's right side at about −2.437 to −2.44. With the goal at 315°, sliding right along the door wall (270°) scored the same goal as going forward (0°), since both are 45° away. With full room and novelty too, the robot slid away from the gap into the corner.
+  - **Cause 2:** the goal pulled the robot past the gap into the corner between the door wall and the right wall, which is exactly front-right. In seed 2, going straight through scored 2.98 against 2.82 for carrying on diagonally, within the 0.2 hysteresis margin, so it kept going diagonally.
+  - Claude pointed to lane shifts (V2-REF, P3) as the fix for cause 1.
+- **Observed (user, Gazebo):** "i just changed the general goal to 337.5 degrees and now it is a lot better."
+  - With 337.5°, going forward (22.5° off the goal, score 0.92) beats sliding right along the door wall (67.5° off, score 0.38).
+  - Not yet measured in the 2D harness. Not pushed at the time of logging (GitHub `main` still has 315°).
