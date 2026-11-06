@@ -332,6 +332,7 @@ class ObstacleCourseNode(Node):
         # start-up checks, real robot only: spin check -> square up with the walls -> forward check -> run
         self.startup = 'run' if is_simulation else 'spin'
         self.startup_ticks = 0
+        self.spin_rate = 0.4             # rad/s for the spin check (stays well inside the template's 0.6 limit)
         self.startup_ref = None
         self.settled = 0
         self.stopped = False            # a start-up check failed: never drive
@@ -430,18 +431,29 @@ class ObstacleCourseNode(Node):
         if self.startup != 'run':
             self.startup_ticks += 1
             if self.startup == 'spin':
-                # turn left for 0.5 s: the heading must go up. If it goes down, heading control would spin the robot.
+                # turn left (up to 2 s): the heading must go up. If it goes down, heading control would spin the robot;
+                # if it doesn't change, the robot isn't turning or the pose isn't following it.
                 if self.startup_ref is None:
                     self.startup_ref = float(self.pose[2])
-                if self.startup_ticks <= 10:
-                    self.move_2D(0.0, 0.0, 0.25)
-                    return
+                    print(f"spin check: turning left, start heading {self.startup_ref:+.1f} deg")
                 change = wrap_deg(self.pose[2] - self.startup_ref)
-                if change < 2.0:
-                    print(f"START-UP CHECK FAILED: turning left changed the heading by {change:+.1f} deg (expected about +7). Not driving.")
+                if change <= -3.0:
+                    print(f"START-UP CHECK FAILED: told to turn left, but the heading went DOWN by {-change:.1f} deg. "
+                          f"The heading's sign is reversed (check the Optitrack setup). Not driving.")
                     self.stopped = True
                     self.move_2D(0.0, 0.0, 0.0)
                     return
+                if change < 3.0:
+                    if self.startup_ticks <= 40:
+                        self.move_2D(0.0, 0.0, self.spin_rate)
+                        return
+                    print(f"START-UP CHECK FAILED: told to turn left at {self.spin_rate} rad/s for 2 s, but the heading changed by only "
+                          f"{change:+.1f} deg. Either the robot didn't turn (is base control running? is it receiving cmd_vel?) "
+                          f"or the pose isn't following it (is Optitrack tracking this robot?). Not driving.")
+                    self.stopped = True
+                    self.move_2D(0.0, 0.0, 0.0)
+                    return
+                print(f"spin check OK: heading went up {change:.1f} deg after {self.startup_ticks * 0.05:.2f} s")
                 self.startup, self.startup_ticks, self.startup_ref = 'align', 0, None
             if self.startup == 'align':
                 # square up with the corridor walls, then hold that heading for the whole run
