@@ -212,7 +212,9 @@ class ObstacleCourseNode(Node):
 
         #then we check which of the 16 directions if feasible by seeing if we move in each direction by 15cm, would we hit anyt
         self.feasible_directions = feasible_directions(self.occupied_points,self.L,self.W) #directions given in radians CCW from robot direction
-        
+        if len(self.feasible_directions)==0:
+            print("no feasible directions")
+            return
         self.tick += 1
         if self.tick % 1 == 0:
             self.visited_points.append((self.pose[0], self.pose[1]))
@@ -291,11 +293,16 @@ def blocked(occupied_points, theta, L, W, d=0.15, step=0.01):
     #L is the half length of robot, W is half width of robot, d is how far robot moves, step is the smaller discretized step distance we test
     x, y = occupied_points[:, 0], occupied_points[:, 1]
     outside_body = ~((np.abs(x) <= L) & (np.abs(y) <= W))      # ignore points inside the robot's own body
+    c, s = np.cos(theta), np.sin(theta)
     for t in np.arange(step, d + 1e-9, step):
-        cx, cy = t * np.cos(theta), t * np.sin(theta)           # robot centre after sliding t
-        if np.any(outside_body & (np.abs(x - cx) <= L+step) & (np.abs(y - cy) <= W+step)):
+        cx, cy = t * c, t * s                                    # robot centre after sliding t
+        # grow the rectangle by step only on the side(s) it is moving towards
+        x_lo, x_hi = cx - L - (step if c < -1e-9 else 0), cx + L + (step if c > 1e-9 else 0)
+        y_lo, y_hi = cy - W - (step if s < -1e-9 else 0), cy + W + (step if s > 1e-9 else 0)
+        if np.any(outside_body & (x >= x_lo) & (x <= x_hi) & (y >= y_lo) & (y <= y_hi)):
             return True
     return False
+    
 
 def scan_to_points(scan,angle_step, lidar_offset):
     #converts the lidar scan into an array of occupied points in robot's reference frame
