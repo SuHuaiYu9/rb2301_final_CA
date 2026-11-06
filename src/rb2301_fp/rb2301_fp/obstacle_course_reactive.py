@@ -126,8 +126,7 @@ class ObstacleCourseNode(Node):
         self.last_scan = None
         self.L = 0.115  #robot's half length
         self.W = 0.11  #robot's half width
-        self.lidar_offset = 0.045
-        self.angle_step =  2* np.pi/len(self.last_scan) if self.last_scan else 0    
+        self.lidar_offset = 0.045    
         self.feasible_directions  = []
 
         
@@ -194,6 +193,7 @@ class ObstacleCourseNode(Node):
         ###### INSERT CODE HERE ######
         if self.last_scan is None:
             return 
+        self.angle_step =  2* np.pi/len(self.last_scan) 
 
         #first transform the lidar scan into occupied points in robot's frame
         self.occupied_points  = scan_to_points(self.last_scan,self.angle_step,self.lidar_offset)
