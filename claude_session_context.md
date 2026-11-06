@@ -133,6 +133,13 @@ Saved 2026-11-03, last updated 2026-11-05. It lets work continue seamlessly afte
         - stop if pose or scan objects don't change for 0.5 s;
         - `seen_past`: inf = can't tell (real LiDAR dropouts).
       R1 data suggest the Optitrack heading is about 180° off (start heading +96.3° but the goal is behind-left; at −90° the goal is forward-right). Tests (`real_reactive_study.py`): 8° off + heading 180° wrong 12/12; −10° + drift +2°/s + noise 12/12; 5° + heading 20° wrong + drift −2°/s + noise 12/12; flip → aborted; frozen pose → aborted. Gazebo mode unchanged (gazebo-style 10/12, real-style 12/12). Pendulum contacts still in about half the runs.
+      **2026-11-06, real-robot test feedback:** the start-up spin check failed on the real robot ("-0.0 deg"). It now turns at 0.4 rad/s for up to 2 s, passes at +3°, and says whether the robot didn't turn or the sign is reversed. After that it ran on the real robot, including the pendulums. User: small swings come back too soon or never leave the lane, "but lots of free space on the left/right". Built and tested:
+        - fix 1: go around the swing (swing range from moving points on the line over 5 s; after 3 s watching, `side_lane` with 0.10 clearance, slide sideways, then cross; give up the lane if the swing grows);
+        - fix 2: per-side clear-time measurement; a timed crossing only if the remaining clear time is at least crossing time + 0.3 s;
+        - lines found by comparing with the scan 0.3 s back (`compare_back` 3), because small swings went undetected;
+        - the watched line is tracked by object, not by `s`;
+        - `self.max_wait` (None = wait; a number = take the old gamble after that many seconds).
+      2D real-mode results: small swings 12/12 with 0 contacts (all beside); medium 11/12 with 0 contacts; wide swings with no max_wait 4/12 and 0 contacts (waits), with max_wait 20 s 12/12 but contacts in 5/12 runs; no pendulums with noise, no false crossings. Gazebo-mode Gazebo-style pendulums with no max_wait: 4/12 (they never slow down).
       Earlier iterations that failed (for the report if asked): plain novelty → dithering at blocked-direction boundaries; no lane shift → stuck at offset gaps; strong time-spent penalty (0.5 per sample) → a single pass made places repellent, so it slid past the gap and wandered away.
 - **About the user:** casual and blunt (swears), learns by doing. Sometimes sends code as screenshots, sometimes pushes to `main` and says "check it". If they say "check" without attaching code, look on GitHub `main`.
 

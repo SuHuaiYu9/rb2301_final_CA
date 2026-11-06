@@ -44,6 +44,14 @@ try:
 except RuntimeError:
     _print('seed %d: no layout\n' % seed); sys.exit()
 if SWING == 'none': w.swingers = []
+import os
+if os.environ.get('AMP'):                                # test setup: swing half-width (m) for each pendulum, from the range AMP=lo,hi
+    _lo, _hi = map(float, os.environ['AMP'].split(','))
+    _ar = np.random.default_rng(500 + seed)
+    for _s in w.swingers:
+        _A = float(_ar.uniform(_lo, _hi)); _mid = 0.5 * (_s['lo'] + _s['hi'])
+        if w.swing_model == 'gazebo': _s['lo'], _s['hi'] = _mid - _A, _mid + _A
+        else: _s['A'] = _A
 g = w.geom
 node = oc.ObstacleCourseNode(is_simulation=False)
 node.half_width = 0.11                                   # test setup only: match the simulated robot body (0.22 m wide)
@@ -53,7 +61,7 @@ def to_maze(px, py):
     c, s = math.cos(PHI), math.sin(PHI)
     return S[0] + c * px - s * py, S[1] + s * px + c * py
 x, y, th = 0.0, 0.0, math.radians(ROT0); t, ticks = 0.0, 0
-hits_s = hits_w = 0; in_s = in_w = False; hist = []; outcome = 'TIMEOUT'; msgs = []; max_dev = 0.0; crash = ''
+reasons = []; hits_s = hits_w = 0; in_s = in_w = False; hist = []; outcome = 'TIMEOUT'; msgs = []; max_dev = 0.0; crash = ''
 try:
     while t < T_END:
         if SWING == 'real': w.update_release(x + 0.0725, t)
@@ -70,6 +78,7 @@ try:
         CMD[:] = [0.0, 0.0, 0.0]; PR.clear()
         node.timer_callback()
         msgs += ['t %.1f %s' % (t, p) for p in PR if not p.startswith('crossing') and p not in ('pendulum line found',)]
+        reasons += [('beside' if 'beside' in p else 'gamble' if 'waited' in p else 'timed' if 'just left' in p else 'nothing moved' if 'nothing' in p else p) for p in PR if p.startswith('crossing:')]
         if node.startup == 'run' and node.tick > 1: max_dev = max(max_dev, abs(math.degrees(th)))
         hit = w.collides(x, y, th, t)
         if hit == 'static' and not in_s: hits_s += 1
@@ -88,5 +97,5 @@ except Exception as e:
 cx = x + 0.0725 * math.cos(th)
 last_sw = max([s_['x'] for s_ in w.swingers], default=w.door[0])
 where = 'past the pendulums' if cx > last_sw + 0.1 else 'past the door' if cx > w.door[0] + 0.1 else 'before the door'
-_print('seed %2d %-6s rot0 %+5.1f herr %+6.1f drift %+.1f | %-7s at %5.1f s | ends (%.2f, %.2f) %s, %.2f m from end wall | heading off the course by up to %.1f deg in the run, %.1f at the end | static %d, pendulum %d contacts%s\n   %s\n'
-       % (seed, SWING, ROT0, HERR, DRIFT, outcome, t, cx, y, where, g['xe'] - cx, max_dev, math.degrees(th), hits_s, hits_w, crash, ' | '.join(msgs[:4])))
+_print('seed %2d %-6s rot0 %+5.1f herr %+6.1f drift %+.1f | %-7s at %5.1f s | ends (%.2f, %.2f) %s, %.2f m from end wall | heading off the course by up to %.1f deg in the run, %.1f at the end | static %d, pendulum %d contacts | crossings: %s%s\n   %s\n'
+       % (seed, SWING, ROT0, HERR, DRIFT, outcome, t, cx, y, where, g['xe'] - cx, max_dev, math.degrees(th), hits_s, hits_w, ','.join(reasons) or '-', crash, ' | '.join(msgs[:4])))

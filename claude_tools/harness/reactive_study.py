@@ -43,6 +43,14 @@ try:
 except RuntimeError:
     _print('seed %d: no layout\n' % seed); sys.exit()
 if SWING == 'none': w.swingers = []
+import os
+if os.environ.get('AMP'):                                # test setup: swing half-width (m) for each pendulum, from the range AMP=lo,hi
+    _lo, _hi = map(float, os.environ['AMP'].split(','))
+    _ar = np.random.default_rng(500 + seed)
+    for _s in w.swingers:
+        _A = float(_ar.uniform(_lo, _hi)); _mid = 0.5 * (_s['lo'] + _s['hi'])
+        if w.swing_model == 'gazebo': _s['lo'], _s['hi'] = _mid - _A, _mid + _A
+        else: _s['A'] = _A
 g = w.geom
 node = oc.ObstacleCourseNode(is_simulation=True)
 jr = np.random.default_rng(1000 + seed)
