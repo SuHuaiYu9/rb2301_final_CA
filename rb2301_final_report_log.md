@@ -413,3 +413,25 @@ With wide swings, the rest were still waiting when the 4-minute test ended (some
   3. **With fixes 1 and 2 (P15–P18, `max_wait` None):** "it looks good now". It crossed the first pendulum, which had "a pretty small amplitude, so there was a big clearing on the right that it can cross through". Then it detected and stopped in front of the second pendulum, "which swings almost the full width of the corridor, then it just stopped there without moving at all for a long time". The terminal did not say it had reached the goal, so it hadn't wrongly decided it was finished.
   4. **With `line_depth` = 0.05:** a static obstacle was mistaken for a pendulum. The robot stopped and waited, realised it wasn't a pendulum, then decided the goal was reached and stopped for good (P19).
 - **Fix:**
+
+## V2-M2: The robot stops for good in a corner, though its back and left are open (Gazebo, own code) (2026-11-06)
+- **Setup (commit `8fbfe1b`):** the feasibility check `blocked()` slides the robot's rectangle along each direction in 1 cm steps, growing every step's rectangle by 1 cm on **all four sides**, so the area between steps is covered.
+- **Observed (Gazebo):** the robot sat in the corner between the right wall and the gate wall, not touching either, with its back and left wide open. It printed `goal score:None,proximity score:None` and `nowehre to go` and never moved again.
+- **Why:**
+  - No direction was feasible. The growth on the sides facing *away* from the motion still reaches back over walls the robot is moving away from. Moving back (180°), the first step's rectangle still sticks out 1 cm to the right, onto the right wall; moving left (90°), it still sticks out 1 cm ahead, onto the gate wall.
+  - **2D test, both walls at the same distance from the robot:**
+
+    | distance | feasible directions |
+    |---|---|
+    | 12 mm | 90°–180° |
+    | 8 mm | 112.5°–157.5° |
+    | 3.5–5 mm | 135° only |
+    | 2.5 mm or less | none |
+
+  - It got that close probably because the scan is older than the robot's pose: scans arrive slower than the 20 Hz loop, while the robot moves 1.5 cm per tick. Not measured in Gazebo. In the 2D harness, "nothing feasible" happened in 6 of 189 runs, each time pressed against a wall.
+- **Options considered:**
+  - **Remove the growth:** fixes the deadlock, but loses the 1 cm buffer. In 21 2D layouts, wall contact went from 2 runs (2 ticks) to 6 runs (55 ticks) with an exact LiDAR.
+  - **Grow only on the side(s) the robot is moving towards:** the user's earlier idea of growing only by the shift. Keeps the buffer in the direction of travel.
+- **Fix (commit `ea7efd4`):** grow only towards the motion: `x_lo, x_hi = cx - L - (step if c < 0), cx + L + (step if c > 0)`, the same for y, with a 1e-9 tolerance for cos/sin ≈ 0.
+  - **Corner test:** with both walls 2–5 mm away, all of 90°–180° are feasible.
+  - **2D harness, 21 layouts, 60 s:** 21/21 through with an exact LiDAR and with 1 cm noise. No "nothing feasible" stops. Contacts: 2 runs (5 ticks) exact, 1 run (10 ticks) noisy.
