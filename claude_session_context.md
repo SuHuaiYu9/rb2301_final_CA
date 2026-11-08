@@ -70,6 +70,16 @@ Saved 2026-11-03, last updated 2026-11-06 (just before a context compaction the 
   - `e228519`: 1 cm side clearance in `free_distance` (m on every side except the one moved away from; step growth unchanged). Harness: 21/21 exact and noisy, no contacts; map7 21.2 s exact but 0/6 with 1 cm noise (0 clearance: 6/6). Growing all four sides brings the V2-M2 corner trap back (tested). Enlarging L/W would re-create the 'ignored band' (Gazebo stuck case).
   - Likely real-course issues told to the user (2026-11-08): no pendulum handling, no goal stop, loop speed on the robot (check with `ros2 topic hz /cmd_vel`), heading not held (the user's own note), W band (now fixed).
   - 2026-11-09 map8 (two drawers in corridor 2, bin in front of the gate's lower panel; `$SP/map8.sdf` + `map8.json`, runner `run_replay_obs.py` with OBS/SDF/START env): user's code past the cuboid at 44 s median / door 77 s; Claude's 28 s / 51 s. Causes: goal 337.5 (upper half of corridor 2), and memory (re-entering the pocket under the bin). **User decided to switch the goal back to 315 deg 'for now'; no other changes.** Not logged (not asked).
+  - **2026-11-09 pendulum handling written for the user's code (their plan):** detect, approach to 8 cm, observe `t_obs`, slide to the wall with more room (about 3 cm), wait, cross straight; repeat per pendulum. Trigger = straight path to the stop point clear (ignoring the pendulum itself), so the door isn't in the way. Final tested version `claude_tools/dev/user_code_with_pendulums_p12.py` (diff against the user's local file in `pendulum_code_p12.diff`; runner `claude_tools/dev/run_pend.py` = `$SP/run_pend_dbg7.py`, env SWING/HX/HALFMAX/AMP/NOISE). Changes found by testing, beyond the plan:
+    - compare with the scan 0.5 s back, both 'left' and 'arrived' (otherwise a pendulum seen end-on is missed);
+    - whole corridor window (2 m sideways), otherwise the observed swing is clipped;
+    - line fixed once set (door edges hijacked it);
+    - wait lane widened 10 cm on the open side only;
+    - 2 s false-alarm check (fewer than 5 moving points near the line, then ignore that spot);
+    - give up if the lane is occupied for `t_obs` (static);
+    - no abort while crossing;
+    - `t_obs` 10 s sim / 4 s real (placeholder).
+    Results (2D, Gazebo-size robot, 21 layouts, HALFMAX 5): 0 pendulum hits and 0 static hits in 84 runs (gazebo/real style x exact/noisy), 21/21 each; about 60 s mean exact, 66-69 s noisy. No pendulums: exact unchanged (23.1 s), noisy 31.4 s against 24.4 s (false alarms). Real-style with a 4.5 s watch: 3/126 runs hit. Loop time +0.4 ms. No goal stop yet (runs end when the rear clears the last pendulum).
 - `setup.py` on `main` has no entry point for `obstacle_course_reactive` yet. The user's local `setup.py` may differ.
 
 ### C) After compaction
