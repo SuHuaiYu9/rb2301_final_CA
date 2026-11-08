@@ -155,18 +155,20 @@ class ObstacleCourseNode(Node):
             self.w_new = 1.5   #weight for novelty: bonus for heading somewhere the robot hasn't been
             self.probe = 0.4   #novelty is judged at the point up to 0.4 m along each direction (less if blocked sooner)
             self.hysteresis = 0.1
+            self.min_speed = 0.075
         else:
             self.speed = 0.3  
             self.test_distance = 0.10
             self.R = 0.15 #the maximum radius that counts towards proximity score
             self.visited_weight = 0.1 #we ight for proximity in calculating score for which direction to travel in
             self.L = 0.115  #robot's half length
-            self.W = 0.11  #robot's half width
+            self.W = 0.10  #robot's half width
             self.lidar_offset = 0.045
             self.w_free = 1.0 #weight for room: w_free * free distance (up to 1 m)
             self.w_new = 1.5   #weight for novelty: bonus for heading somewhere the robot hasn't been
             self.probe = 0.4   #novelty is judged at the point up to 0.4 m along each direction (less if blocked sooner)
             self.hysteresis = 0.1
+            self.min_speed = 0.075
 
 
 
@@ -285,6 +287,8 @@ class ObstacleCourseNode(Node):
             total = np.hypot(forward, sideways)
             if total > self.speed:                 # keep the total speed at most self.speed
                 forward, sideways = forward * self.speed / total, sideways * self.speed / total
+            elif 0 < total < self.min_speed:       # too slow for the real motors: scale up, same direction
+                forward, sideways = forward * self.min_speed / total, sideways * self.min_speed / total
             self.move_2D(forward * np.cos(theta) - sideways * np.sin(theta),
                          forward * np.sin(theta) + sideways * np.cos(theta), 0.0)          
             
@@ -330,7 +334,7 @@ def best_direction(visited_points,feasible_directions, current_pose,goal_directi
         # by about -90 degrees from the gazebo axes, so we need to account for that as well. 
 
 
-
+#legacy function, before lane shift logic was added
 def feasible_directions(occupied_points,L,W,test_distance):
     feasible_directions = []
     for idx in range(16):
@@ -340,19 +344,24 @@ def feasible_directions(occupied_points,L,W,test_distance):
     return feasible_directions
 
 
+
 def free_distance(occupied_points, theta, L, W, max_d=1.0, step=0.01):
-    '''How far the robot can slide along theta, up to max_d (same stepped rectangles as blocked()).'''
+    '''How far the robot can slide along theta, up to max_d (same stepped rectangles as blocked(), all steps checked at once).'''
     x, y = occupied_points[:, 0], occupied_points[:, 1]
     outside_body = ~((np.abs(x) <= L) & (np.abs(y) <= W))      # ignore points inside the robot's own body
     c, s = np.cos(theta), np.sin(theta)
-    for t in np.arange(step, max_d + 1e-9, step):
-        cx, cy = t * c, t * s                                    # robot centre after sliding t
-        # grow the rectangle by step only on the side(s) it is moving towards
-        x_lo, x_hi = cx - L - (step if c < -1e-9 else 0), cx + L + (step if c > 1e-9 else 0)
-        y_lo, y_hi = cy - W - (step if s < -1e-9 else 0), cy + W + (step if s > 1e-9 else 0)
-        if np.any(outside_body & (x >= x_lo) & (x <= x_hi) & (y >= y_lo) & (y <= y_hi)):
-            return t - step                                      # last distance that was still clear
-    return max_d
+    reach = L + W + step                                         # no point further than this from the path can be hit
+    along, side = x * c + y * s, -x * s + y * c                  # each point's distance along the path and to the side of it
+    near = outside_body & (along > -reach) & (along < max_d + reach) & (np.abs(side) < reach)
+    x, y = x[near], y[near]
+    t = np.arange(step, max_d + 1e-9, step)[:, None]             # one row per step
+    cx, cy = t * c, t * s                                        # robot centre after sliding t
+    x_lo, x_hi = cx - L - (step if c < -1e-9 else 0), cx + L + (step if c > 1e-9 else 0)
+    y_lo, y_hi = cy - W - (step if s < -1e-9 else 0), cy + W + (step if s > 1e-9 else 0)
+    hit = np.any((x >= x_lo) & (x <= x_hi) & (y >= y_lo) & (y <= y_hi), axis=1)   # True for each step that hits
+    if not hit.any():
+        return max_d
+    return float(t[np.argmax(hit), 0] - step)                   # last distance that was still clear
 
 def best_lane(occupied_points, theta, L, W, max_shift=0.12, shift_step=0.02, cap=0.6):
     '''Free distance along theta from the best of a few sideways-shifted start positions (positive shift = left of theta).
@@ -384,6 +393,7 @@ def all_lanes(occupied_points, L, W):
         lanes[theta] = best_lane(occupied_points, theta, L, W)
     return lanes
 
+#legacy function, before lane shift was added
 def blocked(occupied_points, theta, L, W, d, step=0.01):
     '''True if sliding d along theta would hit a LiDAR point: checks the robot's rectangle at every step along the way.'''
     #L is the half length of robot, W is half width of robot, d is how far robot moves, step is the smaller discretized step distance we test
