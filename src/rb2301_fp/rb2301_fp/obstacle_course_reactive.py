@@ -127,7 +127,7 @@ class ObstacleCourseNode(Node):
         
         self.feasible_directions  = []
 
-        self.goal_direction = np.deg2rad(337.5) #in degrees
+        self.goal_direction = np.deg2rad(315) #in degrees
         
 
         self.visited_points = []
@@ -156,6 +156,7 @@ class ObstacleCourseNode(Node):
             self.probe = 0.4   #novelty is judged at the point up to 0.4 m along each direction (less if blocked sooner)
             self.hysteresis = 0.1
             self.min_speed = 0.075
+            self.t_wait = 10.0 #if the pendulum hasn't come in front of the robot within this time, cross anyway
         else:
             self.speed = 0.3  
             self.test_distance = 0.10
@@ -169,6 +170,22 @@ class ObstacleCourseNode(Node):
             self.probe = 0.4   #novelty is judged at the point up to 0.4 m along each direction (less if blocked sooner)
             self.hysteresis = 0.1
             self.min_speed = 0.075
+            self.t_wait = 4.0  #if the pendulum hasn't come in front of the robot within this time, cross anyway
+        # pendulum handling
+        self.clock = 0.0              # time in seconds, counted in ticks (20 Hz)
+        self.scan_history = []        # (time, pose, scan) of the last second of scans
+        self.mode = 'navigate'        # 'navigate', 'position', 'wait', 'cross', 'find', 'goal' or 'done'
+        self.line = None              # world (x, y) of the pendulum's near face
+        self.mode_start = 0.0         # time the current mode started
+        self.seen = False             # whether the pendulum has been in front of the robot while waiting
+        self.last_clear = 0.0         # last time nothing was in front of the robot while waiting
+        self.moving_at_line = 0       # moving points seen at the line while waiting (only a real pendulum counts as crossed)
+        self.false_lines = []         # world (x, y) of places that looked like a pendulum but weren't
+        self.crossed = 0              # pendulums crossed so far
+        self.cross_start = None       # world (x, y) where the dash started
+        self.cross_length = 0.0       # how far to dash to get the robot's rear past the pendulum
+        self.standoff = 0.05          # wait with the robot's front this far before the pendulum line
+        self.depth = 0.10             # the pendulum's thickness plus a margin
 
 
 
@@ -239,6 +256,11 @@ class ObstacleCourseNode(Node):
         #first transform the lidar scan into occupied points in robot's frame
         self.occupied_points  = scan_to_points(self.last_scan,self.angle_step,self.lidar_offset)
 
+        #pendulum handling
+        self.clock += 0.05
+        if pendulum_step(self):           # the pendulum code is driving the robot this tick
+            return
+
         #then we check which of the 16 directions is feasible by seeing if we move in each direction by 15cm, would we hit anyt
         self.lanes = all_lanes(self.occupied_points, self.L, self.W)          # {theta: (free distance, sideways shift)}
         self.feasible_directions = [theta for theta, (free, shift) in self.lanes.items() if free >= self.test_distance]
@@ -295,6 +317,151 @@ class ObstacleCourseNode(Node):
 
 
         ###### INSERT CODE HERE ######
+
+#pendulum helper
+def robot_to_world(points, pose):
+    '''(n, 2) points in the robot frame -> world frame, using pose (x, y, heading in degrees).'''
+    h = np.deg2rad(pose[2])
+    x = pose[0] + points[:, 0] * np.cos(h) - points[:, 1] * np.sin(h)
+    y = pose[1] + points[:, 0] * np.sin(h) + points[:, 1] * np.cos(h)
+    return np.column_stack((x, y))
+
+
+def world_to_robot(points, pose):
+    '''(n, 2) points in the world frame -> robot frame (x forward, y left), using pose (x, y, heading in degrees).'''
+    h = np.deg2rad(pose[2])
+    dx, dy = points[:, 0] - pose[0], points[:, 1] - pose[1]
+    return np.column_stack((dx * np.cos(h) + dy * np.sin(h), -dx * np.sin(h) + dy * np.cos(h)))
+
+
+def seen_past(a_scan, a_pose, b_scan, b_pose, angle_step, lidar_offset, margin=0.10):
+    '''World positions of the points hit in scan a that scan b sees more than `margin` past, i.e. points where
+    something was in one scan and not in the other. Only points up to 1 m ahead (and up to 2 m to each side, the whole corridor) are checked.'''
+    a = robot_to_world(scan_to_points(a_scan, angle_step, lidar_offset), a_pose)
+    rel = world_to_robot(a, b_pose)                            # those points, seen from where scan b was taken
+    ahead = (rel[:, 0] > 0) & (rel[:, 0] < 1.0) & (np.abs(rel[:, 1]) < 2.0)
+    a, rel = a[ahead], rel[ahead]
+    lx, ly = rel[:, 0] - lidar_offset, rel[:, 1]               # seen from the LiDAR
+    dist = np.hypot(lx, ly)
+    n = len(b_scan)
+    idx = np.round(np.mod(np.arctan2(ly, lx), 2 * np.pi) / angle_step).astype(int) % n   # the ray of scan b pointing at each one
+    b = np.asarray(b_scan, dtype=float)
+    past = np.ones(len(dist), dtype=bool)
+    for k in (-1, 0, 1):                                       # that ray and both its neighbours must reach past it
+        r = b[(idx + k) % n]
+        past &= np.isfinite(r) & (r > dist + margin)
+    return a[past]
+
+def in_front(points, L, W, line_x, depth, margin=0.10):
+    '''True if any point is in front of the robot: from its right side to `margin` past its left side (the open side,
+    away from the right wall), and from its front to `depth` past the pendulum line.'''
+    x, y = points[:, 0], points[:, 1]
+    return bool(np.any((x > L) & (x < line_x + depth) & (y >= -W) & (y <= W + margin)))
+
+
+def pendulum_step(node):
+    '''Pendulum handling. Once a pendulum is spotted: creep up to 5 cm before its line and slide to the right wall, wait
+    until it has passed in front of the robot (or hasn't come for t_wait), dash across, then do the same for the
+    second one. After the second, drive straight on until the robot can't go any further: the goal.
+    Returns True if it drove the robot this tick (so normal navigation is skipped).'''
+    # 1) spot moving things: compare each new scan with the one about 0.5 s older
+    if not node.scan_history or node.last_scan is not node.scan_history[-1][2]:
+        node.scan_history.append((node.clock, node.pose.copy(), node.last_scan))
+        node.scan_history = [h for h in node.scan_history if node.clock - h[0] <= 1.0]
+        older = [h for h in node.scan_history if node.clock - h[0] >= 0.5]
+        if older:
+            t0, pose0, scan0 = older[-1]
+            moved = np.vstack((seen_past(scan0, pose0, node.last_scan, node.pose, node.angle_step, node.lidar_offset),   # something left
+                               seen_past(node.last_scan, node.pose, scan0, pose0, node.angle_step, node.lidar_offset)))  # something arrived
+            for f in node.false_lines:                             # ignore places already found not to be pendulums
+                moved = moved[np.hypot(moved[:, 0] - f[0], moved[:, 1] - f[1]) > 0.2]
+            rel = world_to_robot(moved, node.pose)
+            if node.line is None and node.mode in ('navigate', 'find') and len(moved) >= 5:
+                node.line = moved[np.argmin(rel[:, 0])]           # the pendulum's near face: the line to deal with next
+            if node.mode == 'wait':                               # count moving points at the line, to confirm it's a pendulum
+                line_x = world_to_robot(node.line[None], node.pose)[0, 0]
+                node.moving_at_line += int(np.sum(np.abs(rel[:, 0] - line_x) < 0.15))
+
+    # 7) after the second pendulum: drive straight on until the robot can't go any further
+    if node.mode == 'goal':
+        ahead = free_distance(node.occupied_points, 0.0, node.L, node.W)
+        if ahead > 0.01:
+            node.move_2D(max(node.min_speed, min(node.speed, ahead)), 0.0, 0.0)
+        else:
+            node.move_2D(0.0, 0.0, 0.0)
+            node.mode = 'done'
+            print("goal reached")
+        return True
+    if node.mode == 'done':
+        node.move_2D(0.0, 0.0, 0.0)
+        return True
+
+    # 6) after the first dash: stand still until the second pendulum is spotted (none within t_wait: go for the goal)
+    if node.mode == 'find':
+        node.move_2D(0.0, 0.0, 0.0)
+        if node.line is None:
+            if node.clock - node.mode_start >= node.t_wait:
+                node.mode = 'goal'
+            return True
+        node.mode = 'position'
+
+    if node.line is None:
+        return False
+    line_x = world_to_robot(node.line[None], node.pose)[0, 0]      # how far ahead of the robot centre the line is
+    to_stop = line_x - node.L - node.standoff                      # how far to drive to stop 5 cm short of it
+
+    # 2) start once the straight way to the stopping point is clear (so the door is no longer in the way)
+    if node.mode == 'navigate':
+        if line_x < node.L:                                        # line behind the robot's front: forget it
+            node.line = None
+            return False
+        before_line = node.occupied_points[node.occupied_points[:, 0] < line_x - 0.05]   # leave the pendulum itself out
+        if free_distance(before_line, 0.0, node.L, node.W) < to_stop:
+            return False
+        node.mode = 'position'
+
+    # 3) creep up to 5 cm before the line, then slide along it to the right wall (about 3 cm from it)
+    if node.mode == 'position':
+        if abs(to_stop) > 0.01:                                    # forwards, or backwards if it's already too close
+            node.move_2D(np.sign(to_stop) * max(node.min_speed, min(node.speed, 2 * abs(to_stop))), 0.0, 0.0)
+            return True
+        right = free_distance(node.occupied_points, -np.pi / 2, node.L, node.W)
+        if right > 0.01:
+            node.move_2D(0.0, -max(node.min_speed, min(node.speed, right)), 0.0)
+            return True
+        node.mode, node.mode_start, node.last_clear, node.seen, node.moving_at_line = 'wait', node.clock, node.clock, False, 0
+
+    # 4) wait until the pendulum has been in front of the robot and left again (or hasn't come for t_wait)
+    if node.mode == 'wait':
+        node.move_2D(0.0, 0.0, 0.0)
+        if in_front(node.occupied_points, node.L, node.W, line_x, node.depth):
+            node.seen = True
+            if node.clock - node.last_clear >= node.t_wait:        # something sits there for good: not a pendulum
+                node.false_lines.append(node.line)
+                node.mode, node.line = 'navigate', None
+            return True
+        node.last_clear = node.clock
+        dash = line_x + node.depth + node.L                        # until the robot's rear is `depth` past the line
+        if node.seen or node.clock - node.mode_start >= node.t_wait:
+            if free_distance(node.occupied_points, 0.0, node.L, node.W) >= dash:   # only if the whole dash is clear now
+                node.mode, node.cross_start, node.cross_length = 'cross', node.pose[:2].copy(), dash
+        return True
+
+    # 5) dash straight across at full speed until the robot's rear is past the line
+    if node.mode == 'cross':
+        travelled = np.hypot(node.pose[0] - node.cross_start[0], node.pose[1] - node.cross_start[1])
+        if travelled < node.cross_length:
+            node.move_2D(node.speed, 0.0, 0.0)
+            return True
+        node.line = None
+        node.move_2D(0.0, 0.0, 0.0)
+        if node.moving_at_line < 5:                                # nothing moved at that line: it wasn't a pendulum
+            node.mode = 'navigate'
+            return True
+        node.crossed += 1
+        node.mode, node.mode_start = ('find' if node.crossed == 1 else 'goal'), node.clock
+        return True
+    return False
 
 def best_direction(visited_points,feasible_directions, current_pose,goal_direction,R,visited_weight,test_distance,lanes, w_free,w_new,probe):
     heading = np.deg2rad(current_pose[2])
