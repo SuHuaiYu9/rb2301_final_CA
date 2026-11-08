@@ -237,8 +237,9 @@ class ObstacleCourseNode(Node):
         #first transform the lidar scan into occupied points in robot's frame
         self.occupied_points  = scan_to_points(self.last_scan,self.angle_step,self.lidar_offset)
 
-        #then we check which of the 16 directions if feasible by seeing if we move in each direction by 15cm, would we hit anyt
-        self.feasible_directions = feasible_directions(self.occupied_points,self.L,self.W,self.test_distance) #directions given in radians CCW from robot direction
+        #then we check which of the 16 directions is feasible by seeing if we move in each direction by 15cm, would we hit anyt
+        self.lanes = all_lanes(self.occupied_points, self.L, self.W)          # {theta: (free distance, sideways shift)}
+        self.feasible_directions = [theta for theta, (free, shift) in self.lanes.items() if free >= self.test_distance]
         if len(self.feasible_directions)==0:
             print("no feasible directions")
             self.move_2D(0,0,0)
@@ -255,11 +256,11 @@ class ObstacleCourseNode(Node):
         else:
             moved = np.hypot(self.pose[0] - self.decision_point[0], self.pose[1] - self.decision_point[1])
         path_blocked = (self.selected_direction is not None and moved < self.test_distance
-                        and blocked(self.occupied_points, self.selected_direction, self.L, self.W, d=self.test_distance - moved))
+                        and self.lanes[self.selected_direction][0] < self.test_distance - moved)
         if self.selected_direction is None or moved >= self.test_distance or path_blocked:
             result = best_direction(self.visited_points, self.feasible_directions, self.pose,
                                     self.goal_direction, self.R, self.visited_weight,self.test_distance,
-                                    self.occupied_points, self.L, self.W, self.w_free,self.w_new,self.probe)
+                                    self.lanes, self.w_free,self.w_new,self.probe)
             new_theta, new_score, scores= result[0], result[3],result[4]
             keep_old = (self.last_best_theta in self.feasible_directions
                         and new_score <= scores[self.last_best_theta] + self.hysteresis)     # new one isn't better by more than 0.2
@@ -276,14 +277,22 @@ class ObstacleCourseNode(Node):
             print("nowehre to go")
         else:
             theta = self.selected_direction
-
-            self.move_2D(self.speed * np.cos(theta), self.speed * np.sin(theta), 0.0)                
+            free, shift = self.lanes[theta]
+            forward = self.speed
+            if shift != 0.0:                       # lining up with a gap: don't drive into what the straight path hits
+                forward = min(self.speed, free_distance(self.occupied_points, theta, self.L, self.W))
+            sideways = np.clip(2.0 * shift, -0.15, 0.15)       # slide towards the lane (positive = left of theta)
+            total = np.hypot(forward, sideways)
+            if total > self.speed:                 # keep the total speed at most self.speed
+                forward, sideways = forward * self.speed / total, sideways * self.speed / total
+            self.move_2D(forward * np.cos(theta) - sideways * np.sin(theta),
+                         forward * np.sin(theta) + sideways * np.cos(theta), 0.0)          
             
 
 
         ###### INSERT CODE HERE ######
 
-def best_direction(visited_points,feasible_directions, current_pose,goal_direction,R,visited_weight,test_distance,occupied_points, L, W, w_free,w_new,probe):
+def best_direction(visited_points,feasible_directions, current_pose,goal_direction,R,visited_weight,test_distance,lanes, w_free,w_new,probe):
     heading = np.deg2rad(current_pose[2])
     visited = np.array(visited_points).reshape(-1, 2)          # (n, 2) array of past (x, y)
     best_thetas, best_score, goal_score, proximity_score = None, -np.inf,None,None
@@ -297,7 +306,7 @@ def best_direction(visited_points,feasible_directions, current_pose,goal_directi
         d = d[(d<=R)] #only consider those Rcm or closer 
         # count nearest visited point only
         proximity_score = -visited_weight * sum(R - d)/R if len(d) else 0.0
-        free = free_distance(occupied_points, theta, L, W)          # how far it can go this way, up to 1 m
+        free = lanes[theta][0]                                      # how far it can go this way (best lane), up to 1 m
         room_score = w_free * free
 
         # novelty, judged at the point it can actually reach this way (up to probe)
@@ -345,6 +354,35 @@ def free_distance(occupied_points, theta, L, W, max_d=1.0, step=0.01):
             return t - step                                      # last distance that was still clear
     return max_d
 
+def best_lane(occupied_points, theta, L, W, max_shift=0.12, shift_step=0.02, cap=0.6):
+    '''Free distance along theta from the best of a few sideways-shifted start positions (positive shift = left of theta).
+    A shift only counts if the robot can slide that far sideways first. Prefers no shift unless a shift clearly
+    gives more room. Returns (free distance, shift).'''
+    straight = free_distance(occupied_points, theta, L, W)
+    if straight >= cap:                                   # already plenty of room: no need to shift
+        return straight, 0.0
+    room_left = free_distance(occupied_points, theta + np.pi / 2, L, W, max_d=max_shift)
+    room_right = free_distance(occupied_points, theta - np.pi / 2, L, W, max_d=max_shift)
+    best_free, best_shift, best_value = straight, 0.0, straight
+    for k in range(1, int(round(max_shift / shift_step)) + 1):
+        for s in (k * shift_step, -k * shift_step):
+            if (s > 0 and s > room_left + 1e-9) or (s < 0 and -s > room_right + 1e-9):
+                continue                                  # not enough room to slide that far sideways
+            offset = s * np.array([-np.sin(theta), np.cos(theta)])   # shifted start, s to the left of theta
+            f = free_distance(occupied_points - offset, theta, L, W, max_d=cap)
+            value = f - abs(s)                            # a shift has to buy more room than it costs
+            if value > best_value:
+                best_free, best_shift, best_value = f, s, value
+    return best_free, best_shift
+
+
+def all_lanes(occupied_points, L, W):
+    '''Best lane for each of the 16 directions: {theta: (free distance, sideways shift)}.'''
+    lanes = {}
+    for idx in range(16):
+        theta = np.deg2rad(idx*22.5)
+        lanes[theta] = best_lane(occupied_points, theta, L, W)
+    return lanes
 
 def blocked(occupied_points, theta, L, W, d, step=0.01):
     '''True if sliding d along theta would hit a LiDAR point: checks the robot's rectangle at every step along the way.'''
