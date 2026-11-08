@@ -356,8 +356,13 @@ def free_distance(occupied_points, theta, L, W, max_d=1.0, step=0.01):
     x, y = x[near], y[near]
     t = np.arange(step, max_d + 1e-9, step)[:, None]             # one row per step
     cx, cy = t * c, t * s                                        # robot centre after sliding t
-    x_lo, x_hi = cx - L - (step if c < -1e-9 else 0), cx + L + (step if c > 1e-9 else 0)
-    y_lo, y_hi = cy - W - (step if s < -1e-9 else 0), cy + W + (step if s > 1e-9 else 0)
+    
+    m = 0.01                                                     # side clearance
+    x_lo = cx - L - (0 if c > 1e-9 else m) - (step if c < -1e-9 else 0)
+    x_hi = cx + L + (0 if c < -1e-9 else m) + (step if c > 1e-9 else 0)
+    y_lo = cy - W - (0 if s > 1e-9 else m) - (step if s < -1e-9 else 0)
+    y_hi = cy + W + (0 if s < -1e-9 else m) + (step if s > 1e-9 else 0)
+    
     hit = np.any((x >= x_lo) & (x <= x_hi) & (y >= y_lo) & (y <= y_hi), axis=1)   # True for each step that hits
     if not hit.any():
         return max_d
