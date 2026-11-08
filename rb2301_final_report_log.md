@@ -502,3 +502,34 @@ With wide swings, the rest were still waiting when the 4-minute test ended (some
   - **Narrow-gap map:** past the bin at 21.2 s (was 62.4 s) with an exact LiDAR. With 1 cm noise, 5 of 6 runs at about 21 s (was 65–234 s); 1 run didn't get past in 240 s.
   - **21 layouts:** 21/21, mean 23.1 s (23.0 before), slowest 38 s (37 s before), no contacts. With 1 cm noise: 21/21, mean 25.8 s.
 - **Cost:** `all_lanes` runs every tick: 7–21 ms on the development PC, against a 50 ms tick. Not yet timed on the robot. `blocked()` and the old `feasible_directions()` are no longer used.
+
+## V2-D8: Minimum commanded speed (own code, commit `a1ca979`) (2026-11-08)
+- **Decision:** if the total commanded speed is above 0 but below `self.min_speed`, scale forward and sideways up to it, keeping the direction. The value is 0.075 m/s in both the sim and real blocks.
+- **Why (user's words):** "it seems to move really slowly at times ... im worried that if the commanded speed is too low, the real robot wont be able to move at all in real life."
+  - **Where the slow commands come from (2D harness, 21 layouts):** only lane shifting. When the straight path is blocked right ahead, forward speed drops to about 0 and the robot slides at 2 × shift (0.04 m/s for a 2 cm shift). 2.4% of moving ticks were below 0.10 m/s, all while shifting; the lowest was 0.04 m/s.
+  - Real motors usually have a deadband. Gazebo's VelocityControl moves at any speed, so the sim can't show it. The robot's actual threshold is not yet measured, so 0.075 is a placeholder.
+  - Scaling keeps the direction, so a robot creeping past an edge (forward 0) still doesn't drive into it.
+- **Result (with 0.08):** 21/21 exact and noisy, no contacts; narrow-gap map 20.5 s, and all 6 noisy runs about 21 s.
+
+## V2-D9: Faster `free_distance`: all steps checked at once (own code, commit `a1ca979`) (2026-11-08)
+- **Decision:** `free_distance` checks all 1 cm steps at once (a table of steps × points, then `np.any(axis=1)` and `np.argmax` for the first hit) instead of a Python loop. It also skips LiDAR points too far from the path to be hit. Same rectangles, same answers: identical in 144,000 random cases, and identical robot paths in the harness.
+- **Why:** the user asked whether Claude's reference running fine on the real robot meant their code would too ("would that translate to my code?").
+  - **Measured on the development PC (Core Ultra 9):** the user's loop took 14–23 ms median per tick (worst 44 ms, one 319 ms spike), against 2.0–2.5 ms for Claude's reference. With lane shifts, `all_lanes` stepped 16 directions × up to 13 lanes every tick.
+  - The code runs on the robot's own computer, which is likely several times slower, against a 50 ms tick.
+  - User's commit message: "realised my code was doing lots of calculations and iterations, so used some numpy magic to make things faster preemptively jic the real robot cannot process as fast".
+- **Result:** about 5 ms median per tick, worst 17–19 ms, on the same PC. Not yet measured on the robot (`ros2 topic hz /cmd_vel` should show about 20 Hz).
+- **Same commit:** the real robot's `W` changed from 0.11 to 0.10, the recorded real half-width (0.20 m wide). With `W` larger than the robot, a wall touching the robot falls inside the ignored "own body" rectangle. That was the Gazebo stuck-against-wall failure, where `W` was 0.11 against the Gazebo robot's 0.095.
+
+## V2-D10: 1 cm side clearance in `free_distance` (own code, commit `e228519`) (2026-11-09)
+- **Decision:** grow the robot's rectangle by `m` = 1 cm on every side except the side it moves away from; the existing 1 cm step growth on the leading side is unchanged:
+  `x_lo = cx - L - (0 if c > 1e-9 else m) - (step if c < -1e-9 else 0)`, and likewise for `x_hi`, `y_lo` and `y_hi`.
+- **Why:** after the faster `free_distance`, one harness run (seed 5) touched a thin can for 14 ticks. The robot slid sideways (270°) with the can's edge exactly level with its front edge, a 0.5 mm graze. Growing only the leading side leaves 0 clearance on sides parallel to the motion.
+- **Options discussed:**
+  - **Enlarge `L` and `W`:** gives the same results, but re-creates the ignored "own body" band (the Gazebo stuck-against-wall failure).
+  - **Grow all four sides (the user's idea):** tested. It brings back the V2-M2 corner trap (no feasible direction with both walls 2 mm away), and more contacts: 7 runs / 90 ticks.
+  - **Not growing the side being left** avoids both. User: "isnt the simplest way to add buffer just to alter the line in free_distance() ...?" The final four lines are that idea, with the side being left excluded.
+- **Result (2D harness):**
+  - **21 layouts:** 21/21 exact (24.4 s mean) and noisy (25.1 s), no contacts.
+  - **Narrow-gap map (0.28 m gap):** 21.2 s exact, but 0/6 with 1 cm noise (6/6 with no clearance).
+  - **Clearance sweep:** 0.5 cm gave 4/6; 2 cm failed exact too.
+  - **Trade-off:** clearance against squeezing through very tight gaps when the LiDAR is noisy.
