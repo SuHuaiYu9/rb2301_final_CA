@@ -482,3 +482,23 @@ With wide swings, the rest were still waiting when the 4-minute test ended (some
 - **Observed (user, Gazebo):** "i just changed the general goal to 337.5 degrees and now it is a lot better."
   - With 337.5°, going forward (22.5° off the goal, score 0.92) beats sliding right along the door wall (67.5° off, score 0.38).
   - Not yet measured in the 2D harness. Not pushed at the time of logging (GitHub `main` still has 315°).
+
+## V2-D7: Lane shifts: line up with gaps slightly off the robot's path (own code, commit `38be8f8`) (2026-11-08)
+- **Decision:** for each of the 16 directions, also try starting from positions shifted sideways by up to ±12 cm, in 2 cm steps. Use the shift that gives the most room, and slide sideways onto it while driving. Ported from Claude's reference (`best_lane`, V2-REF P3).
+  - A shift only counts if the robot can first slide that far sideways (free distance at θ ± 90°).
+  - Each shift is valued as `min(free, 0.6) − |shift|`, so it has to buy more room than it costs. If the straight lane already has 0.6 m or more, no shifts are tried.
+  - **Feasible** = the best lane's free distance ≥ `test_distance`. With no shift this is identical to the old `blocked()` test.
+  - **Path check:** uses the lane's free distance.
+  - **Room score:** uses the lane's free distance.
+  - **Movement:** sideways speed is 2 × shift (capped at 0.15 m/s). While shifting, forward speed is at most the unshifted free distance, so the robot creeps past an edge instead of hitting it. Total speed is capped at `self.speed`. The lane is recalculated every tick, so the shift shrinks to 0 as the robot lines up.
+- **Why:**
+  - **The narrow-gap map.** In a Gazebo map with a narrow gap (about 0.28 m) between a litter bin and the bottom wall of the second corridor, the user observed that the robot "keeps circulating around the left, near-top-wall side of the course without being able to go down low enough to find the gap ... eventually it found the gap but it took really long". In a 2D rebuild of that map (walls from the world file, obstacles at the poses Gazebo reported), the user's code took 62 s to get past the bin.
+  - **Two causes found:**
+    1. The goal (337.5°) pulls towards the top wall, away from the gap.
+    2. The gap only fits the 0.19 m robot if its centre is inside a band about 9 cm wide.
+  - **Claude's reference on that map.** The user tested it in Gazebo with `side_margin` 0.01: "it finds the narrow gap and crosses it successfully really fast. Is that because of its lane shift?" In the 2D rebuild, the reference got past the bin in 22 s, never without lane shifts, and in 59 s with the goal at 337.5°. It assumes a 0.24 m robot, so with 1 cm margins its lane had only about 2 cm of slack.
+  - The door analysis (V2-D6, cause 1) had also pointed to lane shifts.
+- **Result (2D harness, same code as pushed):**
+  - **Narrow-gap map:** past the bin at 21.2 s (was 62.4 s) with an exact LiDAR. With 1 cm noise, 5 of 6 runs at about 21 s (was 65–234 s); 1 run didn't get past in 240 s.
+  - **21 layouts:** 21/21, mean 23.1 s (23.0 before), slowest 38 s (37 s before), no contacts. With 1 cm noise: 21/21, mean 25.8 s.
+- **Cost:** `all_lanes` runs every tick: 7–21 ms on the development PC, against a 50 ms tick. Not yet timed on the robot. `blocked()` and the old `feasible_directions()` are no longer used.
