@@ -174,7 +174,7 @@ class ObstacleCourseNode(Node):
         # pendulum handling
         self.clock = 0.0              # time in seconds, counted in ticks (20 Hz)
         self.scan_history = []        # (time, pose, scan) of the last second of scans
-        self.mode = 'navigate'        # 'navigate', 'position', 'wait', 'cross', 'find', 'goal' or 'done'
+        self.mode = 'navigate'        # 'navigate', 'position', 'wait', 'cross', 'find', 'goal', 'done' or 'check'
         self.line = None              # world (x, y) of the pendulum's near face
         self.mode_start = 0.0         # time the current mode started
         self.seen = False             # whether the pendulum has been in front of the robot while waiting
@@ -185,6 +185,7 @@ class ObstacleCourseNode(Node):
         self.cross_start = None       # world (x, y) where the dash started
         self.cross_length = 0.0       # how far to dash to get the robot's rear past the pendulum
         self.standoff = 0.05          # wait with the robot's front this far before the pendulum line
+        self.course_heading = None    # heading (deg) to hold: the start heading, then the direction of the wall at each pendulum
         self.depth = 0.10             # the pendulum's thickness plus a margin
 
 
@@ -258,6 +259,12 @@ class ObstacleCourseNode(Node):
 
         #pendulum handling
         self.clock += 0.05
+        if self.course_heading is None:
+            self.course_heading = self.pose[2]                   # hold the heading the robot starts with
+        err = wrap_deg(self.pose[2] - self.course_heading)       # how far the robot has turned off it
+        if abs(err) > 1.0 and self.mode != 'cross':                # turn back first (but never stop mid-dash)
+            self.move_2D(0.0, 0.0, -np.sign(err) * 0.3)
+            return
         if pendulum_step(self):           # the pendulum code is driving the robot this tick
             return
 
@@ -378,8 +385,8 @@ def pendulum_step(node):
             rel = world_to_robot(moved, node.pose)
             if node.line is None and node.mode in ('navigate', 'find') and len(moved) >= 5:
                 node.line = moved[np.argmin(rel[:, 0])]           # the pendulum's near face: the line to deal with next
-            if node.mode == 'wait':                               # count moving points at the line, to confirm it's a pendulum
-                line_x = world_to_robot(node.line[None], node.pose)[0, 0]
+            if node.mode == 'wait' or (node.mode == 'check' and node.clock - node.mode_start >= 1.0):
+                line_x = world_to_robot(node.line[None], node.pose)[0, 0]   # count moving points at the line (while standing still)
                 node.moving_at_line += int(np.sum(np.abs(rel[:, 0] - line_x) < 0.15))
 
     # 7) after the second pendulum: drive straight on until the robot can't go any further
@@ -403,7 +410,7 @@ def pendulum_step(node):
             if node.clock - node.mode_start >= node.t_wait:
                 node.mode = 'goal'
             return True
-        node.mode = 'position'
+        node.mode, node.mode_start, node.moving_at_line = 'check', node.clock, 0
 
     if node.line is None:
         return False
@@ -418,6 +425,19 @@ def pendulum_step(node):
         before_line = node.occupied_points[node.occupied_points[:, 0] < line_x - 0.05]   # leave the pendulum itself out
         if free_distance(before_line, 0.0, node.L, node.W) < to_stop:
             return False
+        node.mode, node.mode_start, node.moving_at_line = 'check', node.clock, 0
+
+    # 2b) stand still for 2 s to make sure something really moves at the line (while the robot is moving, static
+    #     things can look as if they moved)
+    if node.mode == 'check':
+        node.move_2D(0.0, 0.0, 0.0)
+        if node.clock - node.mode_start < 2.0:
+            return True
+        if node.moving_at_line < 5:                                # nothing moved there: not a pendulum
+            node.false_lines.append(node.line)
+            node.line = None
+            node.mode, node.mode_start = ('find' if node.crossed else 'navigate'), node.clock   # carry on as before
+            return node.crossed > 0
         node.mode = 'position'
 
     # 3) creep up to 5 cm before the line, then slide along it to the right wall (about 3 cm from it)
@@ -429,6 +449,10 @@ def pendulum_step(node):
         if right > 0.01:
             node.move_2D(0.0, -max(node.min_speed, min(node.speed, right)), 0.0)
             return True
+        side = node.occupied_points[(np.abs(node.occupied_points[:, 0]) <= node.L) & (node.occupied_points[:, 1] < -node.W)
+                                    & (node.occupied_points[:, 1] > -node.W - 0.10)]          # the right wall, alongside the robot
+        if len(side) >= 5:                                         # hold the wall's direction from now on
+            node.course_heading = node.pose[2] + np.degrees(np.arctan(np.polyfit(side[:, 0], side[:, 1], 1)[0]))
         node.mode, node.mode_start, node.last_clear, node.seen, node.moving_at_line = 'wait', node.clock, node.clock, False, 0
 
     # 4) wait until the pendulum has been in front of the robot and left again (or hasn't come for t_wait)
