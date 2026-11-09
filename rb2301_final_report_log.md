@@ -533,3 +533,40 @@ With wide swings, the rest were still waiting when the 4-minute test ended (some
   - **Narrow-gap map (0.28 m gap):** 21.2 s exact, but 0/6 with 1 cm noise (6/6 with no clearance).
   - **Clearance sweep:** 0.5 cm gave 4/6; 2 cm failed exact too.
   - **Trade-off:** clearance against squeezing through very tight gaps when the LiDAR is noisy.
+
+## V2-D11: Pendulum handling: hug the right wall, wait, dash (own code, commit `1cf8705`) (2026-11-09)
+- **First version (not kept):**
+  - At the user's request ("what are your recommendations ... simple is robust"), Claude recommended detect → stop short → watch → cross. The user specified: slide to the wall with more room, about 3 cm from it, and cross when the pendulum leaves the front.
+  - Claude wrote and tested it (Claude's p12). Changes found by testing: compare scans 0.5 s apart in both directions; a whole-corridor window; the line is fixed once found; a wider lane on the open side; false-alarm exits.
+  - Result: 0 hits in 84 2D runs. But on the user's first random Gazebo map "it failed on the second obstacle".
+- **New plan (user's words):** "once the robot detects a pendulum, it chooses an arbitrary side of the wall to slide towards (lets say default right side). then once it is only 3cm away from the wall, it make sure it is only a short distance from the line of the pendulum (by moving forward towards the pendulum line until maybe it is only 5cm away) and then waits for the dynamic obstacle or at least a part of it to appear once in front of itself. once the dynamic obstacle leaves the front of the robot, the robot will dash across ... to just before the second pendulum and wait again". A timeout rule: if the obstacle doesn't appear in front within 10 s (Gazebo) / 4 s (real), cross anyway.
+  - **Confirmed details:** trigger on the first detection, but only once the straight path to the stopping point is clear (so the door isn't in the way); 'in front' = from the robot's front to 10 cm past the line; stay on the same wall for the second pendulum; the dash ends with the rear 10 cm past the line; the timeout counts from being in position; after the second pendulum, drive straight on until the robot can't go further (the goal, as defined in the real-trial facts).
+- **Changes Claude made, found by testing in 2D:**
+  1. Creep forward first, then slide right. Sliding first hit the door posts: 30 obstacle hits.
+  2. 'In front' is widened 10 cm on the open side. The user had approved robot-width only; flagged to them. Near-miss swings had hit the robot during the timeout dash.
+  3. Dash only if the whole dash path is clear.
+  4. Count a pendulum as crossed only if 5 or more moving points were seen at its line while waiting. Noise-triggered false lines had sent the robot to the "goal" early.
+  5. Something static in front for `t_wait` → not a pendulum, back to navigating.
+  6. Back up if already closer than 5 cm.
+- **Result (2D, Gazebo-size robot, 21 layouts per condition, 252 runs: gazebo/real style × normal/small/full-width/noisy, plus real-style with `t_wait` 4 s):**
+  - all reached the goal at the end wall, 0 obstacle hits;
+  - 1 pendulum hit, a sim artefact (a full-width test pendulum swinging through the side wall);
+  - mean 40-59 s.
+  - No pendulums: unchanged with an exact LiDAR (23.1 s); 36 s against 24 s with 1 cm noise (false alarms).
+
+## V2-M3: Static obstacles detected as pendulums in Gazebo (own code, `1cf8705`) (2026-11-09)
+- **Observed (user):** "it falsely detects quite some static obstacles as dynamic obstacles, especially those green cans on gazebo, perhaps due to their cylindrical and irregular shape."
+- **Investigation:**
+  - The green bin's outline at the LiDAR's height is ribbed (radius 0.200-0.226 m, from the mesh). Modelled exactly in 2D, it caused no false detections.
+  - A 15 s recording of the user's running Gazebo showed none, but the robot wasn't near the bins; Gazebo then closed.
+  - **Reproduced by scan lag.** Gazebo's LiDAR is 10 Hz and the loop 20 Hz, and each scan is paired with the robot's pose at the tick it's first seen, so a scan can be up to about 100 ms older than its pose (about 3 cm at 0.3 m/s). While the robot moves, points on small or thin obstacles land a few cm off and look moved.
+  - **2D, no pendulums, 21 layouts:** false pendulum procedures 0 / 7 / 32 with 0 / 50 / 100 ms lag; got through 21 / 18 / 17.
+  - Not confirmed as the cause in the user's Gazebo.
+- **Proposed fix (Claude's q8, not yet adopted):** after the door check, stand still 2 s and count moving points at the line from 1 s on. Standing still, the pose doesn't change, so lag can't fake motion. Fewer than 5 means not a pendulum: ignore that spot and carry on.
+  - With 100 ms lag: no pendulums 21/21 (was 17/21); pendulum runs reached the goal 20-21/21 (was 16-20/21).
+  - Without lag: unchanged. Cost: 2 s per check.
+- **User's questions:**
+  - "would a simpler fix be just changing the frequency of the timercallback to match that of the lidar scan?" Answer, from reasoning only: no. The timer and the LiDAR aren't synchronised, so the lag stays 0-100 ms. A constant lag only cancels when the robot's velocity is the same for both scans, and it changes direction every 10 cm. And every tick-counting value (clock, visited points, check rate) would change.
+  - "standing still for the check means my robot would literally pause, seemingly for no reason?" Answer: only when a detection passes the door check. A real pendulum stops there anyway, and a false alarm costs 2 s. Alternative: creep slowly during the check (error = speed × lag).
+  - "is there a good simple way where we can just eliminate scan lag?" Answer: only partly. A second `scan` subscription can save the pose at the moment a scan arrives (up to 50 ms better). Transport delay, unmatched clocks (Optitrack against the robot) and the spinning real LiDAR (one scan collected over about 0.1 s) remain.
+- **Fix:**

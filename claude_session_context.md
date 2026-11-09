@@ -3,7 +3,57 @@
 Saved 2026-11-03, last updated 2026-11-06 (just before a context compaction the user asked for). It lets work continue seamlessly after compaction **or in a new chat**.
 **This copy is for version 2 (the reactive code).** It lives on branch `claude/reactive-version` (with the report log and `claude_tools/`). Version 1 has its own copy on `claude/final-project-review-3m8r3v`, kept by a different chat. The user's own code is on `main`, which Claude must never change.
 
-## 00. CURRENT STATE: read this first (2026-11-06)
+## 000. LATEST STATE: read this first (2026-11-09, written just before a compaction)
+**Focus: the user's OWN code `src/rb2301_fp/rb2301_fp/obstacle_course_reactive.py` on GitHub `main`, latest `1cf8705` ("added dynamic obstacle detection and navigation").** Claude's `obstacle_course2.py` (section 00 A) is parked at `1b8e7c1`.
+
+**Working mode now.** The user designs; Claude writes code to their plan when asked, tests it in the 2D harness, and reports evidence. The user explicitly asks for recommendations at times. When they ask "why" or "how to fix", answer with evidence. Keep answers simple: they get angry at overcomplication and at "pauses for no reason". When they say "do NOT do simulations, answer from reasoning", do exactly that. Never edit their files. Give code as snippets and let them paste. Check each push with `py_compile`, a diff against the tested version, and the harness.
+
+**What `1cf8705` contains, in this order of development:**
+1. **Navigation.**
+   - 16 directions, `test_distance` 0.10. Feasibility and free distance come from `free_distance`: vectorised stepped rectangles, growth only towards the motion, and 1 cm side clearance (`m` on every side except the one moved away from).
+   - Lane shifts: `best_lane` / `all_lanes`, ±12 cm in 2 cm steps, `cap` 0.6, every tick.
+   - Score = goal (cos to `goal_direction`, now **315 deg**, a local change the user said not to log) + proximity (sum over visited points within R) + room (`w_free` 1 × free distance up to 1 m) + novelty (1.5 × min(1, nearest visited / 0.4) at min(0.4, free)).
+   - Hysteresis compares against the old direction's **current** score (`scores[last_best_theta]`), with `self.hysteresis` 0.1. `min_speed` 0.075 (scale up if 0 < total < min).
+   - Sim/real attribute blocks:
+     - sim: L 0.1075, W 0.095, lidar 0.041, `visited_weight` 0.2;
+     - real: L 0.115, W 0.10, lidar 0.045, `visited_weight` 0.1;
+     - both: `speed` 0.3, R 0.15, a visited point every tick.
+2. **Pendulums: the user's NEW PLAN, Claude's tested version q5** (`claude_tools/dev/user_code_with_pendulums_q5.py`, the same code as `1cf8705` with functions reordered).
+   - `pendulum_step(node)` runs right after `scan_to_points` in the timer. It returns True when it drives.
+   - **Detection:** seen-past both ways (`seen_past(a, b)` and `seen_past(b, a)`) against the scan 0.5 s older, window 1 m ahead × 2 m each side, 5 or more points. The line is the nearest moving point (world).
+   - **Modes, in order:**
+     1. `navigate`: door check, i.e. the straight path to the stop point is clear when the pendulum's own points are left out.
+     2. `position`: creep forwards or backwards to 5 cm before the line, THEN slide right until about 3 cm from the wall.
+     3. `wait`: GO when the pendulum has been in front and left. 'In front' = from the robot's right side to its left side + 10 cm (the open side), from its front to line + 0.10. Otherwise GO on a `t_wait` timeout (10 s sim, 4 s real). Only if the whole dash path is clear.
+     4. `cross`: dash at `speed` until the rear is 10 cm past the line.
+     5. `find`: stand still until the second pendulum is detected; on a `t_wait` timeout, go to `goal`.
+     6. `goal`: drive straight until free ahead ≤ 1 cm, print 'goal reached', then `done`.
+   - A crossing counts only if 5 or more moving points were seen at the line while waiting. If the lane is static for `t_wait`, the robot goes back to navigating and the spot goes into `false_lines`.
+   - Tests (2D, Gazebo-size body, 21 layouts × gazebo/real style × default/small/full/noisy, plus real-style with `t_wait` 4): all reached the goal at the end wall, 0 obstacle hits, 1 pendulum hit (sim artefact: a gazebo full-width test pendulum swinging through the wall).
+3. **OPEN ISSUE: false detections of static obstacles** (user: "especially those green cans on gazebo").
+   - Not reproduced from a Gazebo recording: the robot wasn't near the bins, then Gazebo closed. Not reproduced with the bins' real ribbed outline (radius 0.200-0.226 at the LiDAR's height) in 2D.
+   - **Reproduced by scan lag** in 2D: a scan paired with a pose 50-100 ms later, because Gazebo's LiDAR is 10 Hz against a 20 Hz loop. With 100 ms lag, the pushed version had 32 false procedures in 21 runs and 17/21 through.
+   - **Claude's proposed fix q8, NOT adopted** (`claude_tools/dev/user_code_with_pendulums_q8.py`): after the door check, a `check` mode stands still 2 s and counts moving points at the line from 1 s on; fewer than 5 means a false line. With 100 ms lag, goals 20-21/21 against 16-20/21. Without lag, unchanged.
+   - **The user then asked:**
+     - Could the timer frequency match the LiDAR's? Answered no: the two aren't synchronised, a constant lag only cancels at constant velocity, and every tick-counting value would change.
+     - Doesn't standing still mean pausing for no reason? Answered: only when a detection passes the door check; a real pendulum stops there anyway; false alarms cost 2 s. Alternative: creep slowly during the check.
+     - Can scan lag be eliminated simply? Answered: only partly. A second `scan` subscription at the end of `__init__` can save the pose at arrival, which removes up to 50 ms of tick delay. Transport delay, mismatched clocks (Optitrack against the robot) and the spinning real LiDAR (a scan smeared over about 0.1 s) remain.
+   - **The user has not decided yet. Next step: ask what they want for the false detections, or wait for them.**
+4. **Other open items:**
+   - The real-robot loop rate isn't measured (`ros2 topic hz /cmd_vel`).
+   - Heading isn't held (the user's own note), and the dash runs 3 cm from the wall.
+   - `t_wait` must be set from a timed real pendulum.
+   - The goal-fade idea (goal / (1 + visited within 0.5 m / 150)) was offered for map7, not adopted.
+
+**Harness for the user's code** (copy into the scratchpad; run with `/usr/bin/python3`; sim at `claude_tools/sim`; runners in `claude_tools/dev/runners/`, maps in `claude_tools/dev/maps/`). Usage: `ENV... python3 runner.py <dir containing obstacle_course.py> claude_tools/sim <secs> <seed>`.
+- `run_gz3.py`: no pendulums, Gazebo-size body (`sim2d.ROBOT_BODY = (-0.034, 0.181, 0.095)`), NOISE env, turn-backs. It ends 0.4 m past the door. Layout seeds: 0 2 3 4 5 7 8 9 10 11 12 13 14 15 16 19 20 21 22 23 24.
+- `run_pend_goal_lat.py`: pendulums. Env: SWING (gazebo|real), HX (0.025 gazebo, 0.015 real), HALFMAX=5, AMP=lo,hi, NOISE, LAT (scan lag in ticks). It ends at mode 'done' and prints 'GOAL x m from end wall' with pendulum and static hits.
+- `run_lat4.py`: no pendulums with LAT; counts 'check' and 'position' entries.
+- `run_timing.py`: loop time.
+- `run_replay_obs.py`: Gazebo layout replay. OBS env = JSON (rects, circles, door, past_y), SDF env = world file, START env.
+- `record.py`, `grab2.py`, `lagmeasure.py`: read-only ROS 2 recorders for the user's running Gazebo (`source /opt/ros/jazzy/setup.bash`; Gazebo ran on this machine).
+
+## 00. EARLIER STATE (2026-11-06; still valid background, but section 000 is newer)
 **There are two code files in play. `obstacle_course2.py` is parked at `1b8e7c1`; right now we are working on the user's own `obstacle_course_reactive.py` (section B).**
 
 ### A) `obstacle_course2.py`: Claude's reactive reference code, run by the user on the REAL robot (current focus)
@@ -131,7 +181,7 @@ Saved 2026-11-03, last updated 2026-11-06 (just before a context compaction the 
    The user may also create their own branch for the new version. If they say "check it", ask which branch if it isn't `main`.
 4. **Test tools:** `claude_tools/` (2D simulator and test scripts; see its README). Previous sessions' scratchpad copies are gone; don't refer to them. **The scratchpad can be wiped in the middle of a session** (it happened on 2026-11-05): if a clone is missing, clone it again; push anything worth keeping.
 5. **Re-read section 1 (ground rules)** before answering. The most common way to upset this user is giving advice they didn't ask for.
-6. **Continue from section 00 (current task),** using section 2 for the state of things.
+6. **Continue from section 000 (latest state),** then section 00 for background, and section 2 for the state of things.
 
 ## 0b. How to update the report log (whenever the user says "log this")
 - **File:** `rb2301_final_report_log.md` in your clone of branch `claude/reactive-version` (`$SP/claude_branch/` on the user's machine).
@@ -142,7 +192,7 @@ Saved 2026-11-03, last updated 2026-11-06 (just before a context compaction the 
   - `R#` = a real-robot run;
   - `E#` = an error or crash;
   - `S#` = a milestone or success.
-  Version 2 entries use a **`V2-` prefix** so they never clash with version 1 numbers. Next free numbers: **V2-D11, V2-M3, V2-R2, V2-E1, V2-S1**. V2-REF problems now run up to P18. (V2-REF = Claude's reference code, a one-off entry type.)
+  Version 2 entries use a **`V2-` prefix** so they never clash with version 1 numbers. Next free numbers: **V2-D12, V2-M4, V2-R2, V2-E1, V2-S1**. V2-REF problems now run up to P18. (V2-REF = Claude's reference code, a one-off entry type.)
 - **Fields:** Decision/Observed, Why, Potential errors (only if they ask), Observed, Fix. Leave Fix blank unless they say what they did. Add a "Later:" line to an older entry when a value changes, as with D5.
 - **Record the user's own remarks for the report faithfully,** as with R1's "Remark for the report".
 - **Commit and push:** `git add rb2301_final_report_log.md && git commit -m "Log ..."` with the trailer lines **your own session's** system prompt gives (Co-Authored-By, plus your own Claude-Session URL, not the old one). Then push to your branch (section 0, step 2). Push access works.
