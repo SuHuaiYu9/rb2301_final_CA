@@ -585,3 +585,27 @@ With wide swings, the rest were still waiting when the 4-minute test ended (some
   2. At each pendulum, once at the right wall (end of `position`), fit a line to the wall points alongside the robot (`np.polyfit`) and hold that wall's direction from then on. Fewer than 5 points: keep the old heading.
 - **Result (2D, 21 layouts each):** start or course off by −5° to +3° gave 21/21 at the end wall with 0 hits, also with ±3°/m drift and 5 mm LiDAR noise. The weak case is starting 5° or more with the nose away from the wall (8 pendulum hits): the slide to the wall carries the robot into its 5 cm gap before it lines up. Mitigation: place the robot square at the start.
 - **To check on the real robot:** that 0.3 rad/s actually turns it, and that the first correction turns the right way.
+
+## V2-D13: Debug prints, tuning and real-robot refinements before the first real test (own code, commits `6ac5ab8`, `1ddbf14`) (2026-11-09)
+- **Prints.** The user asked for "print debug statements that reflects on the terminal what state the robot is in ... and others that provide valuable real time info of what the robot is experiencing".
+  - They chose plain `print()` with no timestamps: "im using my own eyes to match what prints on terminal and where the robot is on the gazebo map".
+  - **What prints:** one line at each pendulum event:
+    - pendulum detected (with the line's distance);
+    - stopping 2 s to check; false alarm (with the moving-point count); pendulum confirmed;
+    - at the wall, lining up (with the turn angle); pendulum in front; something static in front (not a pendulum);
+    - GO (pendulum has passed / timeout); crossed pendulum N; crossed but nothing moved;
+    - pendulum line already behind (forgotten); no second pendulum found, so driving to the goal.
+  - Removed the per-decision score print, which buried everything else.
+- **Tuning (the user's; "this code works pretty well n im happy with it"):**
+  - `goal_direction`: 315° → 337.5°, shared by sim and real.
+  - Sim block only: `w_new` 1.5 → 1.8 and `min_speed` 0.075 → 0.2.
+  - Real `min_speed` kept at 0.075. Claude: at 0.2 m/s, the creep to the line and the end-wall approach would overshoot with real delays.
+- **Real-robot refinements.** The user had asked "what would LIKELY go wrong on the real robot ... how can we thus improve our code?":
+  - **Wall gap:** sliding stops at free right ≤ 0.04, about 6 cm from the wall (was about 3.5 cm). The tilt the dash, goal and in-front checks tolerate rises from about 1.5° to about 8°. It also helps if the LiDAR can't see very close.
+  - **Heading hold with hysteresis:** start turning at 3° off and stop within 1° (was a single 1° band). With a real delay of about 0.1–0.2 s, a 0.3 rad/s turn overshoots 2–3°, so a single 1° band could wobble forever.
+  - **After a wall fit, `node.turning = True`:** it then lines up to within 1° even when the wall is only 1–3° off.
+- **Still to check on the real robot:**
+  - LiDAR `range_min` (if above about 0.10, the goal stop must move further from the wall);
+  - loop rate (`ros2 topic hz /cmd_vel`);
+  - the first turn's direction and that 0.3 rad/s turns it;
+  - where the pendulums hang and how far they swing (the off-centre case is on hold).
