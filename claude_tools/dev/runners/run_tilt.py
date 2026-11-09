@@ -98,7 +98,7 @@ try:
             _ln = getattr(node, 'line', None)
             ML.append((round(t, 1), _m, 'robot', round(x + 0.0725, 2), round(y, 2), 'line', None if _ln is None else (round(float(_ln[0]), 2), round(float(_ln[1]), 2)), 'swing pts', len(getattr(node, 'swing_points', [])), 'side', getattr(node, 'side', None)))
         if getattr(node, 'mode', None) == 'done': break
-        x += (math.cos(th) * CMD[0] - math.sin(th) * CMD[1]) * 0.05; y += (math.sin(th) * CMD[0] + math.cos(th) * CMD[1]) * 0.05; th += CMD[2] * 0.05; t += 0.05; ticks += 1
+        x += (math.cos(th) * CMD[0] - math.sin(th) * CMD[1]) * 0.05; y += (math.sin(th) * CMD[0] + math.cos(th) * CMD[1]) * 0.05; th += CMD[2] * 0.05 + math.radians(float(_os.environ.get("DRIFT", "0"))) * math.hypot(CMD[0], CMD[1]) * 0.05; t += 0.05; ticks += 1
 except Exception as e:
     err = ' CRASH %s: %s' % (type(e).__name__, e)
 builtins_print('seed %d: %s (%.2f, %.2f) at %.1f s | pendulum hits %d, static hits %d%s' % (seed, ("GOAL %.2f m from end wall" % (w.geom["xe"] - (x + 0.0725 + 0.1075))) if getattr(node, "mode", None) == "done" else ("PAST" if x + 0.0725 - 0.1075 > LAST else "ends"), x + 0.0725, y, t, SW[0], ST[0], err))
