@@ -399,6 +399,14 @@ With wide swings, the rest were still waiting when the 4-minute test ended (some
 
 - **Reverted (2026-11-06):** after trying the P19–P22 version on the real robot, the user said: "this newest version of code is no good. it has a lot of problems. we should revert back to the last version", and that the previous version "was working pretty well until your last edit". The reference was reverted to `d17d32a`, the version before P19–P22. P19–P22 above are kept for the record; none of them is in the current reference, so the false-goal bug (P19) is present again.
 - **Reverted again (2026-11-06):** after trying `d17d32a`, the user said: "this version doesnt even work properly in simulation... hmm, can we revert back one more commit?" The reference was reverted to `1b8e7c1` (the real-robot version with the spin-check fix). So the P15 changes (crossing beside small swings, timing only long-enough gaps, comparing with the scan 0.3 s back, the `max_wait` switch) are not in the current reference either.
+- **Fixed from `1b8e7c1` (2026-11-09, commit `5f1dfb7`).** User: "can you fix obstacle_course2.py based on the problems i reported in a robust, as simple as possible way? ... simple is almost always better than complex."
+  1. **P19, false goal:** an ignored static line is now flagged `ignored` and no longer counts as a crossed pendulum for the final approach (2 lines). Repro (`harness/false_line_repro.py`): the old version said "goal reached" right after ignoring the line; the new one carries on.
+  2. **P15, small swings:** fix 1 of `d17d32a` is back (cross beside a small swing, scans compared 0.3 s apart, keep watching the same line). Fix 2 (gap timing, `max_wait`) is left out, because it caused P18/P20 (waiting forever at a full-width swing). Two changes:
+     - **One side-lane try per line.** Slow Gazebo swings fooled the 5 s swing estimate, so `d17d32a` slid back and forth between side lanes forever. That is likely why "d17d32a doesn't work properly in simulation". If the swing reaches the chosen lane, it falls back to the old timing.
+     - **A 5 s watch before choosing** (was 3 s). With 3 s, one run judged the swing too early, slid into it and got stuck there being hit.
+  - **Result (2D, `reactive_study.py`, 21 layouts each):**
+    - Gazebo-style full-width swings: 19/21 → 21/21 at the goal; runs with a pendulum contact 3 → 1.
+    - Small hand-released swings (half-width 0.15–0.3 m): 19/21 → 21/21; contact runs 7 → 2.
 
 ## V2-D2: Write my own reactive controller instead of using Claude's reference (2026-11-06)
 - **Decision:** the user will write their own reactive controller from the original template (`obstacle_course_template.py`, commit `88d3f81`), rather than use Claude's reference code (V2-REF).
