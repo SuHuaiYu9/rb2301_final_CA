@@ -217,6 +217,18 @@ def wall_alignment(points, max_angle=25.0, step=0.5, bin_size=0.02, max_range=1.
             best_angle, best_sharpness = a, sharpness
     return float(best_angle)
 
+def side_lane(swing_lo, swing_hi, l_robot, room_left, room_right, half_width, clearance, step=0.02):
+    """Sideways offset (m, positive = left) to the nearest lane whose full width, plus `clearance` on each side, stays
+    outside the pendulum's swing range [swing_lo, swing_hi] (sideways positions it has reached). Only offsets the robot
+    can slide to (room_left / room_right) are tried. None if there is no such lane."""
+    best = None
+    for off in np.arange(-min(room_right, 1.0), min(room_left, 1.0) + 1e-9, step):
+        lo = l_robot + off - half_width - clearance
+        hi = l_robot + off + half_width + clearance
+        if (hi < swing_lo or lo > swing_hi) and (best is None or abs(off) < abs(best)):
+            best = float(off)
+    return best
+
 class LidarNode(Node):
     def __init__(self):
         """Node constructor"""
@@ -305,6 +317,8 @@ class ObstacleCourseNode(Node):
         self.direction_k = None         # current direction (index k: k * 22.5 deg anticlockwise from forward)
         # moving obstacles (pendulums)
         self.prev_scan = None           # (lidar_x, lidar_y, heading, ranges) of the previous scan
+        self.scan_history = []          # the last few scans; lines are found by comparing with the one 0.3 s back
+        self.compare_back = 3           # scans back (0.3 s at 10 Hz): slow pendulums move further, so they show up better
         self.scan_used = None           # the scan array used last tick, to notice when a new one arrives
         self.lines = []                 # pendulum lines found so far (see update_lines)
         self.pendulums_seen = False     # at least one pendulum line found
@@ -319,6 +333,14 @@ class ObstacleCourseNode(Node):
         self.in_lane_tick = -1000       # last tick a pendulum overlapped the robot's lane
         self.moving_tick = 0            # last tick anything on the line moved
         self.go = False                 # cleared to cross the line
+        # fix 1: go around a small swing
+        self.swing_samples = []         # (tick, sideways position) of the pendulum's moving points on the line being watched
+        self.swing_window = 100         # use the last 5 s of them (more than one swing)
+        self.watch_ticks = 100          # watch a line for 5 s (2+ swings of a real pendulum) before trusting its swing range
+        self.swing_clearance = 0.10     # keep the robot's sides this far outside the swing range
+        self.watch_start = 0
+        self.side_target = None         # sideways position (l) of a lane beside the swing, while sliding to it
+        self.side_tried = False         # a lane beside the swing is tried only once per line (a slow swing can fool it)
         self.crossing = None            # s of the line being crossed
         self.goal_ticks = 0             # ticks in a row that forward has been blocked after the pendulums
         self.done = False
@@ -517,9 +539,10 @@ class ObstacleCourseNode(Node):
         maybe = [L for L in self.lines if not L['crossed'] and L['s'] > front - 0.03 and (L['confirmed'] or self.tick - L['hits'][-1] <= 40)]
         stop_at = min(L['s'] for L in maybe) if maybe else None   # s of the nearest line the robot must stop short of
         at_line = line is not None and line['s'] - front <= self.standoff + 0.02
-        if at_line and self.waiting_at != line['s']:                   # just arrived at this line: start watching it
-            self.waiting_at = line['s']
+        if at_line and self.waiting_at is not line:                    # just arrived at this line: start watching it
+            self.waiting_at = line
             self.prev_sides, self.in_lane_tick, self.moving_tick, self.go = None, -1000, self.tick, False
+            self.swing_samples, self.watch_start, self.side_target, self.side_tried = [], self.tick, None, False
         if not at_line:
             self.waiting_at = None
 
@@ -529,11 +552,16 @@ class ObstacleCourseNode(Node):
             lx = cx + self.lidar_ahead * np.cos(heading)               # LiDAR position in the world
             ly = cy + self.lidar_ahead * np.sin(heading)
             now = (lx, ly, heading, self.last_scan)
-            if self.prev_scan is not None:
-                wxy = changed_points(self.prev_scan, now, step)
+            self.scan_history = (self.scan_history + [now])[-(self.compare_back + 1):]
+            if len(self.scan_history) > self.compare_back:
+                wxy = changed_points(self.scan_history[0], now, step)
                 s_moved, l_moved = along_and_left(wxy[:, 0], wxy[:, 1], heading)
                 keep = (s_moved > s_robot + 0.15) & (s_moved < s_robot + 2.5) & (np.abs(l_moved - l_robot) < 1.2)
                 update_lines(self.lines, s_moved[keep], self.tick)
+                if at_line:                                            # moving points on the line being watched: the swing range
+                    on = (s_moved >= line['s'] - 0.06) & (s_moved <= line['s'] + self.line_depth)
+                    self.swing_samples += [(self.tick, float(v)) for v in l_moved[on]]
+                    self.swing_samples = [(t, v) for t, v in self.swing_samples if self.tick - t <= self.swing_window]
                 if not self.pendulums_seen and any(L['confirmed'] for L in self.lines):
                     self.pendulums_seen = True
             self.prev_scan = now
@@ -560,13 +588,28 @@ class ObstacleCourseNode(Node):
                 room_left = free_distance(points, np.pi / 2, self.half_length, self.half_width, self.side_margin)
                 room_right = free_distance(points, -np.pi / 2, self.half_length, self.half_width, self.side_margin)
                 leaving_far_side = v_left > 0.05 if room_left > room_right else v_right > 0.05
-                if not in_lane and not approaching:
+                travel = line['s'] + self.line_depth + 2 * self.half_length - front   # until the rear is past the line
+
+                # fix 1: after watching for 3 s, look for a lane beside the swing, with room to cross straight from it
+                swing = [v for t, v in self.swing_samples]
+                if not self.side_tried and self.tick - self.watch_start >= self.watch_ticks and len(swing) >= 20:
+                    off = side_lane(min(swing), max(swing), l_robot, room_left, room_right, self.half_width, self.swing_clearance)
+                    if off is not None and free_distance(points, 0.0, self.half_length, self.half_width, self.side_margin, shift=off) >= travel:
+                        self.side_target, self.side_tried = l_robot + off, True
+                        print(f"pendulum swings between {min(swing):+.2f} and {max(swing):+.2f}: sliding {off:+.2f} m to cross beside it")
+                if self.side_target is not None and swing:            # the swing grew into the chosen lane: forget it
+                    if not (self.side_target + self.half_width + self.swing_clearance < min(swing)
+                            or self.side_target - self.half_width - self.swing_clearance > max(swing)):
+                        self.side_target = None
+                        print("the swing grew: lane beside it given up")
+
+                if self.side_target is None and not in_lane and not approaching:
                     if leaving_far_side and self.tick - self.in_lane_tick <= 8:
                         self.go = "the pendulum just left the lane"    # heading for the far side: longest until it's back
                     elif self.tick - self.moving_tick >= 20:
                         self.go = "nothing on the line moved for 1 s"
                 elif in_lane and self.tick - self.moving_tick >= 40:
-                    line['crossed'] = True                             # something static has sat there for 2 s: not a pendulum
+                    line['crossed'] = line['ignored'] = True           # something static has sat there for 2 s: not a pendulum
                     print("not a pendulum line: ignoring it")
                 self.prev_sides, self.prev_sides_tick = (d_left, d_right), self.tick
 
@@ -585,8 +628,15 @@ class ObstacleCourseNode(Node):
                     return
 
         # 3) at a line: wait at its edge until cleared to cross
-        self.waiting = at_line and line['s'] == self.waiting_at and not line['crossed']
+        self.waiting = at_line and line is self.waiting_at and not line['crossed']
         if self.waiting:
+            if self.side_target is not None:                           # fix 1: slide sideways (still short of the line) first
+                off = self.side_target - l_robot
+                if abs(off) > 0.01:
+                    drive(self, 0.0, float(np.clip(2.0 * off, -0.15, 0.15)))
+                    return
+                self.side_target = None
+                self.go = "beside the pendulum's swing"
             if self.go:
                 print("crossing: " + self.go)
                 self.crossing, self.go, self.waiting, self.blocked_ticks = line['s'], False, False, 0
@@ -597,7 +647,7 @@ class ObstacleCourseNode(Node):
 
         # 4) past the pendulums (a line has been crossed and no line is ahead): drive straight forward until the robot
         #    can't move forward any more, for 1 s. That's the goal.
-        if not ahead and any(L['confirmed'] and L['crossed'] for L in self.lines):
+        if not ahead and any(L['confirmed'] and L['crossed'] and not L.get('ignored') for L in self.lines):
             free_ahead = free_distance(points, 0.0, self.half_length, self.half_width, self.side_margin)
             wall = all(free_distance(points, a, self.half_length, self.half_width, self.side_margin) < 0.25 for a in (np.pi / 4, -np.pi / 4))
             if free_ahead < self.free_min:
