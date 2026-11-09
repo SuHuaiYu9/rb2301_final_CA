@@ -570,3 +570,18 @@ With wide swings, the rest were still waiting when the 4-minute test ended (some
   - "standing still for the check means my robot would literally pause, seemingly for no reason?" Answer: only when a detection passes the door check. A real pendulum stops there anyway, and a false alarm costs 2 s. Alternative: creep slowly during the check (error = speed × lag).
   - "is there a good simple way where we can just eliminate scan lag?" Answer: only partly. A second `scan` subscription can save the pose at the moment a scan arrives (up to 50 ms better). Transport delay, unmatched clocks (Optitrack against the robot) and the spinning real LiDAR (one scan collected over about 0.1 s) remain.
 - **Fix:**
+
+## V2-D12: Heading drift fix: hold the heading, line up with the wall at each pendulum (own code, commit `852ded4`) (2026-11-09)
+- **Problem (Gazebo):** after the first half of the course, the robot's heading had turned −5.5° (nose into the right wall), probably from a contact. At the first pendulum it slid to the wall and then stood in `wait` forever: the dash check (`free_distance` ahead ≥ about 0.365 m) never passed, because the tilted path ran into the wall (free ahead measured live: 0.13–0.30 m). The swinging pendulum kept resetting the static timeout.
+  - **Same cause, found in 2D:** `goal` stops at the side wall ("goal reached" 0.2–1.2 m short), and the in-front zone can catch the wall, so a real pendulum is dismissed.
+  - **Tolerance:** 2° into the wall already stuck every run; 1° was fine.
+- **User remarks:** "something like this might likely happen on the real robot too, since the real robot would inevitably drift or be placed down at the start not facing exactly forward." And: "the course itself is not going to be perfect ... the corridor may not point exactly straight ahead, parallel walls may not be exactly parallel".
+- **Options considered:**
+  - **Slide away from the wall when the dash is blocked:** unsticks it, but `goal` and the in-front zone still fail.
+  - **Turn once to a fixed straight-ahead heading:** fails once the robot drifts again, and a fixed course heading is fragile against a crooked wall.
+  - **Chosen, the user's idea:** "before the robot crosses the pendulum, we make it align itself parallel to the wall that it is closest to first, instead of making its heading exactly align straight ahead".
+- **Decision:**
+  1. Hold the start heading for the whole run: if more than 1° off, stop and turn back at 0.3 rad/s. Never during the dash.
+  2. At each pendulum, once at the right wall (end of `position`), fit a line to the wall points alongside the robot (`np.polyfit`) and hold that wall's direction from then on. Fewer than 5 points: keep the old heading.
+- **Result (2D, 21 layouts each):** start or course off by −5° to +3° gave 21/21 at the end wall with 0 hits, also with ±3°/m drift and 5 mm LiDAR noise. The weak case is starting 5° or more with the nose away from the wall (8 pendulum hits): the slide to the wall carries the robot into its 5 cm gap before it lines up. Mitigation: place the robot square at the start.
+- **To check on the real robot:** that 0.3 rad/s actually turns it, and that the first correction turns the right way.
