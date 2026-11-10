@@ -388,7 +388,7 @@ def pendulum_step(node):
             for f in node.false_lines:                             # ignore places already found not to be pendulums
                 moved = moved[np.hypot(moved[:, 0] - f[0], moved[:, 1] - f[1]) > 0.2]
             rel = world_to_robot(moved, node.pose)
-            if node.line is None and node.mode in ('navigate', 'find') and len(moved) >= 5:
+            if node.line is None and node.mode in ('navigate', 'find') and len(moved) >= 15:
                 node.line = moved[np.argmin(rel[:, 0])]           # the pendulum's near face: the line to deal with next
                 print(f"PENDULUM DETECTED, line {rel[:, 0].min():.2f} m ahead")
             if node.mode == 'wait' or (node.mode == 'check' and node.clock - node.mode_start >= 1.0):
@@ -398,7 +398,7 @@ def pendulum_step(node):
     # 7) after the second pendulum: drive straight on until the robot can't go any further
     if node.mode == 'goal':
         ahead = free_distance(node.occupied_points, 0.0, node.L, node.W)
-        if ahead > 0.01:
+        if ahead > 0.05:
             node.move_2D(max(node.min_speed, min(node.speed, ahead)), 0.0, 0.0)
         else:
             node.move_2D(0.0, 0.0, 0.0)
