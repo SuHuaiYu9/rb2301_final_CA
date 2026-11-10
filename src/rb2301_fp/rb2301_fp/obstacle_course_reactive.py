@@ -127,7 +127,7 @@ class ObstacleCourseNode(Node):
         
         self.feasible_directions  = []
 
-        self.goal_direction = np.deg2rad(337.5) #in degrees
+        self.goal_direction = np.deg2rad(315) #in degrees
         
 
         self.visited_points = []
@@ -161,12 +161,12 @@ class ObstacleCourseNode(Node):
             self.speed = 0.3  
             self.test_distance = 0.10
             self.R = 0.15 #the maximum radius that counts towards proximity score
-            self.visited_weight = 0.1 #we ight for proximity in calculating score for which direction to travel in
+            self.visited_weight = 0.2 #we ight for proximity in calculating score for which direction to travel in
             self.L = 0.115  #robot's half length
             self.W = 0.10  #robot's half width
             self.lidar_offset = 0.045
             self.w_free = 1.0 #weight for room: w_free * free distance (up to 1 m)
-            self.w_new = 1.5   #weight for novelty: bonus for heading somewhere the robot hasn't been
+            self.w_new = 1.8   #weight for novelty: bonus for heading somewhere the robot hasn't been
             self.probe = 0.4   #novelty is judged at the point up to 0.4 m along each direction (less if blocked sooner)
             self.hysteresis = 0.1
             self.min_speed = 0.075
@@ -184,7 +184,7 @@ class ObstacleCourseNode(Node):
         self.crossed = 0              # pendulums crossed so far
         self.cross_start = None       # world (x, y) where the dash started
         self.cross_length = 0.0       # how far to dash to get the robot's rear past the pendulum
-        self.standoff = 0.05          # wait with the robot's front this far before the pendulum line
+        self.standoff = 0.10          # wait with the robot's front this far before the pendulum line
         self.course_heading = None    # heading (deg) to hold: the start heading, then the direction of the wall at each pendulum
         self.turning = False          # True while turning back to course_heading
         self.depth = 0.10             # the pendulum's thickness plus a margin
@@ -260,7 +260,7 @@ class ObstacleCourseNode(Node):
         self.occupied_points  = scan_to_points(self.last_scan,self.angle_step,self.lidar_offset)
 
         #pendulum handling
-        self.clock += 0.05
+        self.clock = self.get_clock().now().nanoseconds * 1e-9   # real time, whatever the loop rate
         if self.course_heading is None:
             self.course_heading = self.pose[2]                   # hold the heading the robot starts with
         err = wrap_deg(self.pose[2] - self.course_heading)       # how far the robot has turned off it
@@ -274,31 +274,55 @@ class ObstacleCourseNode(Node):
         if pendulum_step(self):           # the pendulum code is driving the robot this tick
             return
 
-        #then we check which of the 16 directions is feasible by seeing if we move in each direction by 15cm, would we hit anyt
-        self.lanes = all_lanes(self.occupied_points, self.L, self.W)          # {theta: (free distance, sideways shift)}
-        self.feasible_directions = [theta for theta, (free, shift) in self.lanes.items() if free >= self.test_distance]
-        if len(self.feasible_directions)==0:
-            print("no feasible directions")
-            self.move_2D(0,0,0)
-            return
+        # #then we check which of the 16 directions is feasible by seeing if we move in each direction by 15cm, would we hit anyt
+        # self.lanes = all_lanes(self.occupied_points, self.L, self.W)          # {theta: (free distance, sideways shift)}
+        # self.feasible_directions = [theta for theta, (free, shift) in self.lanes.items() if free >= self.test_distance]
+        # if len(self.feasible_directions)==0:
+        #     print("no feasible directions")
+        #     self.move_2D(0,0,0)
+        #     return
+        # self.tick += 1
+        # if self.tick % 1 == 0:
+        #     self.visited_points.append((self.pose[0], self.pose[1]))
+        
+        
+        # # choose a new direction at the start, once the robot has moved 15 cm since the last choice,
+        # # or if something now blocks the rest of that 15 cm
+        # if self.decision_point is None:
+        #     moved = np.inf
+        # else:
+        #     moved = np.hypot(self.pose[0] - self.decision_point[0], self.pose[1] - self.decision_point[1])
+        # path_blocked = (self.selected_direction is not None and moved < self.test_distance
+        #                 and self.lanes[self.selected_direction][0] < self.test_distance - moved)
+        # if self.selected_direction is None or moved >= self.test_distance or path_blocked:
         self.tick += 1
-        if self.tick % 1 == 0:
-            self.visited_points.append((self.pose[0], self.pose[1]))
-        
-        
-        # choose a new direction at the start, once the robot has moved 15 cm since the last choice,
-        # or if something now blocks the rest of that 15 cm
+        self.visited_points.append((self.pose[0], self.pose[1]))
+
+        # choose a new direction at the start, once the robot has moved test_distance since the last choice,
+        # or if something now blocks the rest of it. Only then check all 16 directions (slow on the Jetson);
+        # in between, only check the chosen one.
         if self.decision_point is None:
             moved = np.inf
         else:
             moved = np.hypot(self.pose[0] - self.decision_point[0], self.pose[1] - self.decision_point[1])
-        path_blocked = (self.selected_direction is not None and moved < self.test_distance
-                        and self.lanes[self.selected_direction][0] < self.test_distance - moved)
-        if self.selected_direction is None or moved >= self.test_distance or path_blocked:
+        if self.selected_direction is not None and moved < self.test_distance:
+            lane = best_lane(self.occupied_points, self.selected_direction, self.L, self.W)
+            if lane[0] >= self.test_distance - moved:
+                self.lanes = {self.selected_direction: lane}           # still clear: keep going this way
+            else:
+                moved = np.inf                                         # something now blocks it: decide again
+        if self.selected_direction is None or moved >= self.test_distance:
+            self.lanes = all_lanes(self.occupied_points, self.L, self.W)          # {theta: (free distance, sideways shift)}
+            self.feasible_directions = [theta for theta, (free, shift) in self.lanes.items() if free >= self.test_distance]
+            if len(self.feasible_directions)==0:
+                print("no feasible directions")
+                self.move_2D(0,0,0)
+                return
             result = best_direction(self.visited_points, self.feasible_directions, self.pose,
                                     self.goal_direction, self.R, self.visited_weight,self.test_distance,
                                     self.lanes, self.w_free,self.w_new,self.probe)
             new_theta, new_score, scores= result[0], result[3],result[4]
+            print("im here")
             keep_old = (self.last_best_theta in self.feasible_directions
                         and new_score <= scores[self.last_best_theta] + self.hysteresis)     # new one isn't better by more than 0.2
             if keep_old:
@@ -351,7 +375,7 @@ def seen_past(a_scan, a_pose, b_scan, b_pose, angle_step, lidar_offset, margin=0
     something was in one scan and not in the other. Only points up to 1 m ahead (and up to 2 m to each side, the whole corridor) are checked.'''
     a = robot_to_world(scan_to_points(a_scan, angle_step, lidar_offset), a_pose)
     rel = world_to_robot(a, b_pose)                            # those points, seen from where scan b was taken
-    ahead = (rel[:, 0] > 0) & (rel[:, 0] < 1.0) & (np.abs(rel[:, 1]) < 2.0)
+    ahead = (rel[:, 0] > 0.15) & (rel[:, 0] < 1.0) & (np.abs(rel[:, 1]) < 0.6)
     a, rel = a[ahead], rel[ahead]
     lx, ly = rel[:, 0] - lidar_offset, rel[:, 1]               # seen from the LiDAR
     dist = np.hypot(lx, ly)
@@ -628,18 +652,10 @@ def blocked(occupied_points, theta, L, W, d, step=0.01):
 
 def scan_to_points(scan,angle_step, lidar_offset):
     #converts the lidar scan into an array of occupied points in robot's reference frame
-    x_list = []
-    y_list = []
-    for idx in range(len(scan)):
-        if not math.isfinite(scan[idx]) or scan[idx]<=0.05: #check whether this lidar value is valid bro
-            continue
-        angle = idx*angle_step
-        x = lidar_offset + np.cos(angle)*scan[idx]
-        y = np.sin(angle)*scan[idx]
-        x_list.append(x)
-        y_list.append(y)
-    final_array = np.column_stack((np.array(x_list),np.array(y_list)))
-    return final_array
+    scan = np.asarray(scan, dtype=float)
+    angle = np.arange(len(scan)) * angle_step
+    valid = np.isfinite(scan) & (scan > 0.05)                    #check whether each lidar value is valid
+    return np.column_stack((lidar_offset + np.cos(angle[valid]) * scan[valid], np.sin(angle[valid]) * scan[valid]))
 
 
 def main(args=None):
