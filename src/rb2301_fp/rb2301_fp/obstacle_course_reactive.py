@@ -171,7 +171,7 @@ class ObstacleCourseNode(Node):
             self.hysteresis = 0.1
             self.min_speed = 0.075
             self.t_wait = 4.0  #if the pendulum hasn't come in front of the robot within this time, cross anyway
-            self.wall_gap = 0.08   # extra room needed ahead, so walls stay outside the LiDAR's 15 cm blind zone
+            self.wall_gap = 0.04   # extra room needed ahead, so walls stay outside the LiDAR's 15 cm blind zone
         # pendulum handling
         self.clock = 0.0              # time in seconds, counted in ticks (20 Hz)
         self.scan_history = []        # (time, pose, scan) of the last second of scans
@@ -415,7 +415,7 @@ def pendulum_step(node):
             for f in node.false_lines:                             # ignore places already found not to be pendulums
                 moved = moved[np.hypot(moved[:, 0] - f[0], moved[:, 1] - f[1]) > 0.2]
             rel = world_to_robot(moved, node.pose)
-            if node.line is None and node.mode in ('navigate', 'find') and len(moved) >= 15:
+            if node.line is None and node.mode in ('navigate', 'find') and len(moved) >= 10:
                 node.line = moved[np.argmin(rel[:, 0])]           # the pendulum's near face: the line to deal with next
                 print(f"PENDULUM DETECTED, line {rel[:, 0].min():.2f} m ahead")
             if node.mode == 'wait' or (node.mode == 'check' and node.clock - node.mode_start >= 1.0):
