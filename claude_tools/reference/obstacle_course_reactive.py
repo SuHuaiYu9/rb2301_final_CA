@@ -585,6 +585,8 @@ class ObstacleCourseNode(Node):
                     self.in_lane_tick = self.tick
                 if moving:
                     self.moving_tick = self.tick
+                if self.tick - self.watch_start >= 10 and line['hits'] and line['hits'][-1] == self.tick:
+                    line['real'] = True                                # it moved while the robot stood still: a real pendulum
                 room_left = free_distance(points, np.pi / 2, self.half_length, self.half_width, self.side_margin)
                 room_right = free_distance(points, -np.pi / 2, self.half_length, self.half_width, self.side_margin)
                 leaving_far_side = v_left > 0.05 if room_left > room_right else v_right > 0.05
@@ -647,7 +649,7 @@ class ObstacleCourseNode(Node):
 
         # 4) past the pendulums (a line has been crossed and no line is ahead): drive straight forward until the robot
         #    can't move forward any more, for 1 s. That's the goal.
-        if not ahead and any(L['confirmed'] and L['crossed'] and not L.get('ignored') for L in self.lines):
+        if not ahead and any(L['confirmed'] and L['crossed'] and L.get('real') for L in self.lines):
             free_ahead = free_distance(points, 0.0, self.half_length, self.half_width, self.side_margin)
             wall = all(free_distance(points, a, self.half_length, self.half_width, self.side_margin) < 0.25 for a in (np.pi / 4, -np.pi / 4))
             if free_ahead < self.free_min:
