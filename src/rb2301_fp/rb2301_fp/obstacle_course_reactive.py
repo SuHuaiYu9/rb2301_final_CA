@@ -171,6 +171,7 @@ class ObstacleCourseNode(Node):
             self.hysteresis = 0.1
             self.min_speed = 0.075
             self.t_wait = 4.0  #if the pendulum hasn't come in front of the robot within this time, cross anyway
+            self.wall_gap = 0.08   # extra room needed ahead, so walls stay outside the LiDAR's 15 cm blind zone
         # pendulum handling
         self.clock = 0.0              # time in seconds, counted in ticks (20 Hz)
         self.scan_history = []        # (time, pose, scan) of the last second of scans
@@ -307,13 +308,15 @@ class ObstacleCourseNode(Node):
             moved = np.hypot(self.pose[0] - self.decision_point[0], self.pose[1] - self.decision_point[1])
         if self.selected_direction is not None and moved < self.test_distance:
             lane = best_lane(self.occupied_points, self.selected_direction, self.L, self.W)
-            if lane[0] >= self.test_distance - moved:
+            #if lane[0] >= self.test_distance - moved:
+            if lane[0] >= self.test_distance + self.wall_gap - moved:
                 self.lanes = {self.selected_direction: lane}           # still clear: keep going this way
             else:
                 moved = np.inf                                         # something now blocks it: decide again
         if self.selected_direction is None or moved >= self.test_distance:
             self.lanes = all_lanes(self.occupied_points, self.L, self.W)          # {theta: (free distance, sideways shift)}
-            self.feasible_directions = [theta for theta, (free, shift) in self.lanes.items() if free >= self.test_distance]
+            #self.feasible_directions = [theta for theta, (free, shift) in self.lanes.items() if free >= self.test_distance]
+            self.feasible_directions = [theta for theta, (free, shift) in self.lanes.items() if free >= self.test_distance + self.wall_gap]
             if len(self.feasible_directions)==0:
                 print("no feasible directions")
                 self.move_2D(0,0,0)
