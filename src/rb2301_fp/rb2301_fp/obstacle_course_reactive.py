@@ -378,7 +378,7 @@ def seen_past(a_scan, a_pose, b_scan, b_pose, angle_step, lidar_offset, margin=0
     something was in one scan and not in the other. Only points up to 1 m ahead (and up to 2 m to each side, the whole corridor) are checked.'''
     a = robot_to_world(scan_to_points(a_scan, angle_step, lidar_offset), a_pose)
     rel = world_to_robot(a, b_pose)                            # those points, seen from where scan b was taken
-    ahead = (rel[:, 0] > 0.15) & (rel[:, 0] < 1.0) & (np.abs(rel[:, 1]) < 0.6)
+    ahead = (rel[:, 0] > 0.15) & (rel[:, 0] < 1.0) & (np.abs(rel[:, 1]) < 1.2)
     a, rel = a[ahead], rel[ahead]
     lx, ly = rel[:, 0] - lidar_offset, rel[:, 1]               # seen from the LiDAR
     dist = np.hypot(lx, ly)
