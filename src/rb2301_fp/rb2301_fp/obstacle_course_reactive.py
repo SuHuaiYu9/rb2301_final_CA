@@ -264,15 +264,15 @@ class ObstacleCourseNode(Node):
         if self.course_heading is None:
             self.course_heading = self.pose[2]                   # hold the heading the robot starts with
         err = wrap_deg(self.pose[2] - self.course_heading)       # how far the robot has turned off it
-        if abs(err) > 3.0:
-            self.turning = True                                    # start turning back once it's 3 deg off
-        elif abs(err) < 1.0:
-            self.turning = False                                   # stop once it's within 1 deg
+        if abs(err) > 6.0:
+            self.turning = True                                    # start turning back once it's 6 deg off
+        elif abs(err) < 2.0:
+            self.turning = False                                   # stop once it's within 2 deg
         if self.turning and self.mode != 'cross':                  # (but never stop mid-dash)
-            self.move_2D(0.0, 0.0, -np.sign(err) * 0.3)
+            self.move_2D(0.0, 0.0, -np.sign(err) * 0.2)
             return
-        if pendulum_step(self):           # the pendulum code is driving the robot this tick
-            return
+        # if pendulum_step(self):           # the pendulum code is driving the robot this tick
+        #     return
 
         # #then we check which of the 16 directions is feasible by seeing if we move in each direction by 15cm, would we hit anyt
         # self.lanes = all_lanes(self.occupied_points, self.L, self.W)          # {theta: (free distance, sideways shift)}
@@ -322,7 +322,7 @@ class ObstacleCourseNode(Node):
                                     self.goal_direction, self.R, self.visited_weight,self.test_distance,
                                     self.lanes, self.w_free,self.w_new,self.probe)
             new_theta, new_score, scores= result[0], result[3],result[4]
-            print("im here")
+            print("im still here")
             keep_old = (self.last_best_theta in self.feasible_directions
                         and new_score <= scores[self.last_best_theta] + self.hysteresis)     # new one isn't better by more than 0.2
             if keep_old:
