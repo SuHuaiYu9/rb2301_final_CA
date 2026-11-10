@@ -617,3 +617,26 @@ With wide swings, the rest were still waiting when the 4-minute test ended (some
   - loop rate (`ros2 topic hz /cmd_vel`);
   - the first turn's direction and that 0.3 rad/s turns it;
   - where the pendulums hang and how far they swing (the off-centre case is on hold).
+
+## V2-M4: Optitrack heading 175° off on robot 4 (real robot, own code) (2026-11-10)
+- **Observed (real robot, `bingda_004`):**
+  - many false pendulum detections, even after raising the trigger to 15 points;
+  - the robot oscillated around the same spots, especially with the front and right blocked, and didn't move on to the door.
+  - `obstacle_course2.py` crossed the same area fine.
+- **Attempts before the cause was known** (each kept, because each also fixes a real hardware issue; see "Decision"):
+  - a tighter detection window (only in front of the robot);
+  - `wall_gap` 0.08 for the LiDAR's 15 cm blind zone;
+  - a slower, wider heading hold (6°/2°, 0.2 rad/s).
+  - Claude's 2D test of measuring the visited penalty further ahead made sim worse (414 reversals against 3), so it wasn't suggested.
+- **User's diagnosis:** "its almost like the visited points are not doing anything to push the robot away from the visited places. could it be a optitrack global pose error such that the novelty score or the proximity score are not calculated correctly?"
+- **Cause:** the pose heading did not match the robot's real forward direction.
+  - `obstacle_course2.py`'s start-up check on the same robot printed: "WARNING: the robot's true heading is +175 deg from the pose heading. Using the measured heading instead".
+  - The config has measured heading offsets only for robots 7 and 12. Robot 4 used the "auto" offset, which assumes its Optitrack rigid body was created facing maze +y; it was created facing roughly the opposite way.
+  - The rotated course axes (Gazebo +x = real −y) were not the problem. A pure rotation cancels out, because all world maths uses the pose's own heading.
+  - **Effects of the wrong heading:**
+    - the visited and novelty points were evaluated almost behind the robot, so it was drawn back to where it had been;
+    - the pendulum detector corrected for the robot's motion in nearly the opposite direction, so static things looked as if they moved.
+  - `obstacle_course2.py` was immune only because its start-up check measures the true heading and uses it instead.
+- **Fix:** `4 = 7.1` under `[heading_offsets]` in `optitrack_variables.config` (the section is meant for this: "a rigid body that was NOT created facing maze +y"). Reported heading = Optitrack heading − 87.86 − offset, so the offset drops by 175° from auto's −177.9°, giving −352.9 ≡ +7.1°. The check then read "true heading −2.3 deg from the pose heading", within the 10 cm check's accuracy.
+- **Result:** the user reported "it works way better now".
+- **Remark for the report:** a frame error in the global pose can masquerade as tuning or sensor problems (oscillation, false detections). Several symptom fixes were tried before the root cause was found; checking the pose heading against the actual direction of travel should come first on a new robot.
