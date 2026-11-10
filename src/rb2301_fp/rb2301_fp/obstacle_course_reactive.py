@@ -157,6 +157,7 @@ class ObstacleCourseNode(Node):
             self.hysteresis = 0.1
             self.min_speed = 0.2 #originally 0.075
             self.t_wait = 10.0 #if the pendulum hasn't come in front of the robot within this time, cross anyway
+            self.wall_gap = 0.0
         else:
             self.speed = 0.3  
             self.test_distance = 0.10
@@ -272,8 +273,8 @@ class ObstacleCourseNode(Node):
         if self.turning and self.mode != 'cross':                  # (but never stop mid-dash)
             self.move_2D(0.0, 0.0, -np.sign(err) * 0.2)
             return
-        # if pendulum_step(self):           # the pendulum code is driving the robot this tick
-        #     return
+        if pendulum_step(self):           # the pendulum code is driving the robot this tick
+            return
 
         # #then we check which of the 16 directions is feasible by seeing if we move in each direction by 15cm, would we hit anyt
         # self.lanes = all_lanes(self.occupied_points, self.L, self.W)          # {theta: (free distance, sideways shift)}
@@ -325,7 +326,6 @@ class ObstacleCourseNode(Node):
                                     self.goal_direction, self.R, self.visited_weight,self.test_distance,
                                     self.lanes, self.w_free,self.w_new,self.probe)
             new_theta, new_score, scores= result[0], result[3],result[4]
-            print("im still here")
             keep_old = (self.last_best_theta in self.feasible_directions
                         and new_score <= scores[self.last_best_theta] + self.hysteresis)     # new one isn't better by more than 0.2
             if keep_old:
