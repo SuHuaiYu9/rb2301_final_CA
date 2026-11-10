@@ -640,3 +640,14 @@ With wide swings, the rest were still waiting when the 4-minute test ended (some
 - **Fix:** `4 = 7.1` under `[heading_offsets]` in `optitrack_variables.config` (the section is meant for this: "a rigid body that was NOT created facing maze +y"). Reported heading = Optitrack heading − 87.86 − offset, so the offset drops by 175° from auto's −177.9°, giving −352.9 ≡ +7.1°. The check then read "true heading −2.3 deg from the pose heading", within the 10 cm check's accuracy.
 - **Result:** the user reported "it works way better now".
 - **Remark for the report:** a frame error in the global pose can masquerade as tuning or sensor problems (oscillation, false detections). Several symptom fixes were tried before the root cause was found; checking the pose heading against the actual direction of travel should come first on a new robot.
+
+## V2-M5: Optitrack stops tracking past the second pendulum (real robot) (2026-11-10)
+- **Observed:** after crossing the second pendulum, the robot never stopped at the goal and kept ramming the cardboard end wall. The last print was "GO: pendulum has passed", so it was still in `cross`, which ends only once the distance travelled (from the Optitrack pose) reaches the dash length.
+- **Diagnosis (user's call to find the cause before adding logic: "shouldnt we try to figure out why the robot never stops even after crossing the seconod pendulum, instead of adding new logic?"):** debug prints at GO and every `cross` tick showed:
+  - GO with dash 0.37 m and free ahead 0.71 m, so the LiDAR saw the end wall and there was room;
+  - the pose then froze at (0.77, 0.19, −98°) and `travelled` stuck at 0.06 m;
+  - meanwhile `free ahead` kept falling from 0.31 to 0.00 m: the robot was still moving, but its pose wasn't updating.
+- **Cause:** Optitrack loses the robot past the second pendulum. The user confirmed it: "optitrack stops working past the second pendulum."
+- **Decision (user):** no code change. "we can just remember that in our log but we dont have to change our code to accomodate that, because the optitrack should not stop updating."
+  - Claude had offered a time limit on the dash (cross_length / speed + 0.3 s) so `cross` would end even with a frozen pose. Not adopted.
+- **Remark for the report:** with a frozen pose, everything that uses it misbehaves (the dash distance, the heading hold, pendulum detection), while `goal` (LiDAR only) would still work.
