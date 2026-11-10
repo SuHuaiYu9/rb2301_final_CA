@@ -162,7 +162,7 @@ class ObstacleCourseNode(Node):
             self.speed = 0.3  
             self.test_distance = 0.10
             self.R = 0.15 #the maximum radius that counts towards proximity score
-            self.visited_weight = 0.2 #we ight for proximity in calculating score for which direction to travel in
+            self.visited_weight = 0.25 #we ight for proximity in calculating score for which direction to travel in
             self.L = 0.115  #robot's half length
             self.W = 0.10  #robot's half width
             self.lidar_offset = 0.045
@@ -172,7 +172,7 @@ class ObstacleCourseNode(Node):
             self.hysteresis = 0.1
             self.min_speed = 0.075
             self.t_wait = 4.0  #if the pendulum hasn't come in front of the robot within this time, cross anyway
-            self.wall_gap = 0.04   # extra room needed ahead, so walls stay outside the LiDAR's 15 cm blind zone
+            self.wall_gap = 0.08   # extra room needed ahead, so walls stay outside the LiDAR's 15 cm blind zone
         # pendulum handling
         self.clock = 0.0              # time in seconds, counted in ticks (20 Hz)
         self.scan_history = []        # (time, pose, scan) of the last second of scans
@@ -459,7 +459,7 @@ def pendulum_step(node):
             print("pendulum line already behind the robot: forgetting it")
             return False
         before_line = node.occupied_points[node.occupied_points[:, 0] < line_x - 0.05]   # leave the pendulum itself out
-        if free_distance(before_line, 0.0, node.L, node.W) < to_stop:
+        if free_distance(before_line, 0.0, node.L, node.W,m=0.02) < to_stop:
             return False
         node.mode, node.mode_start, node.moving_at_line = 'check', node.clock, 0
         print("stopping 2 s to check it really moves")
@@ -513,13 +513,18 @@ def pendulum_step(node):
         if node.seen or node.clock - node.mode_start >= node.t_wait:
             if free_distance(node.occupied_points, 0.0, node.L, node.W) >= dash:   # only if the whole dash is clear now
                 node.mode, node.cross_start, node.cross_length = 'cross', node.pose[:2].copy(), dash
-                print("GO: pendulum has passed" if node.seen else "GO: timeout")
+                print(f"GO: {'pendulum has passed' if node.seen else 'timeout'}, dash {dash:.2f} m, "
+                      f"free ahead {free_distance(node.occupied_points, 0.0, node.L, node.W):.2f} m")
+            elif free_distance(node.occupied_points, np.pi / 2, node.L, node.W) > 0.01:
+                node.move_2D(0.0, node.min_speed, 0.0)      # dash path blocked (bent wall?): edge away from the wall until it's clear
         return True
 
     # 5) dash straight across at full speed until the robot's rear is past the line
     if node.mode == 'cross':
         travelled = np.hypot(node.pose[0] - node.cross_start[0], node.pose[1] - node.cross_start[1])
         if travelled < node.cross_length:
+            print(f"cross: travelled {travelled:.2f}/{node.cross_length:.2f} m, free ahead {free_distance(node.occupied_points, 0.0, node.L, node.W):.2f} m, "
+                  f"pose ({node.pose[0]:.2f}, {node.pose[1]:.2f}, {node.pose[2]:.0f})")
             node.move_2D(node.speed, 0.0, 0.0)
             return True
         node.line = None
@@ -583,8 +588,9 @@ def feasible_directions(occupied_points,L,W,test_distance):
 
 
 
-def free_distance(occupied_points, theta, L, W, max_d=1.0, step=0.01):
+def free_distance(occupied_points, theta, L, W, max_d=1.0, step=0.01,m=0.01):
     '''How far the robot can slide along theta, up to max_d (same stepped rectangles as blocked(), all steps checked at once).'''
+    # m is side clearance
     x, y = occupied_points[:, 0], occupied_points[:, 1]
     outside_body = ~((np.abs(x) <= L) & (np.abs(y) <= W))      # ignore points inside the robot's own body
     c, s = np.cos(theta), np.sin(theta)
@@ -595,7 +601,7 @@ def free_distance(occupied_points, theta, L, W, max_d=1.0, step=0.01):
     t = np.arange(step, max_d + 1e-9, step)[:, None]             # one row per step
     cx, cy = t * c, t * s                                        # robot centre after sliding t
     
-    m = 0.01                                                     # side clearance
+                                                        
     x_lo = cx - L - (0 if c > 1e-9 else m) - (step if c < -1e-9 else 0)
     x_hi = cx + L + (0 if c < -1e-9 else m) + (step if c > 1e-9 else 0)
     y_lo = cy - W - (0 if s > 1e-9 else m) - (step if s < -1e-9 else 0)
