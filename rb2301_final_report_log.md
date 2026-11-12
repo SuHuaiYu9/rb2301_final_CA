@@ -651,3 +651,11 @@ With wide swings, the rest were still waiting when the 4-minute test ended (some
 - **Decision (user):** no code change. "we can just remember that in our log but we dont have to change our code to accomodate that, because the optitrack should not stop updating."
   - Claude had offered a time limit on the dash (cross_length / speed + 0.3 s) so `cross` would end even with a frozen pose. Not adopted.
 - **Remark for the report:** with a frozen pose, everything that uses it misbehaves (the dash distance, the heading hold, pendulum detection), while `goal` (LiDAR only) would still work.
+
+## V2-D14: Wall alignment at the pendulums removed; line up with the start heading instead (own code, commit `06e55ef`) (2026-11-12)
+- **Problem (real robot):** at the second pendulum the right wall has a slight convexity. The user: "the robot never fully aligns, and it ends up keep trying to align with the wall when it is there ... it just keeps rotating, and never stops rotating such that it never crosses the second pendulum." The wall fit (V2-D12) trusts only about 23 cm of wall beside the robot, so a bump there gives a wrong heading.
+- **User's idea:** "instead of aligning the robot with the wall before crossing the obstacles, i jsut make the robot align itself with the correct global heading(using optitrack's publised pose)."
+- **On the way:** the robot had been recalibrated in Optitrack, so the user removed the `4 = 7.1` override from V2-M4 ("the heading is fixed already"). Lined up with the corridor, the pose now read −168.7°, against about −97° before the recalibration. A hard-coded global heading would silently break after any recalibration.
+- **Decision:** don't hard-code a heading. Hold the heading the robot starts with (it is placed square to the course, and `course_heading` stays `None` until the first tick). At the end of `position`, the wall fit is replaced by `node.turning = True`, so the robot turns back to within 2° of the start heading before waiting.
+- **Why it's enough:** nothing depends on the local wall any more, and a few degrees of placement error are covered by the 6 cm wall gap and the slide-away fallback in `wait`.
+- **Watch for:** if it ever keeps rotating at the second pendulum again, the only remaining cause is a frozen pose (Optitrack drops out near there, V2-M5).
