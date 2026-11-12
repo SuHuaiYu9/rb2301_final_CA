@@ -272,7 +272,7 @@ class ObstacleCourseNode(Node):
             self.turning = True                                    # start turning back once it's 6 deg off
         elif abs(err) < 2.0:
             self.turning = False                                   # stop once it's within 2 deg
-        if self.turning and self.mode != 'cross':                  # (but never stop mid-dash)
+        if self.turning and self.mode != 'cross' and self.crossed == 0:   # no turning after the first pendulum
             self.move_2D(0.0, 0.0, -np.sign(err) * 0.2)
             return
         if pendulum_step(self):           # the pendulum code is driving the robot this tick
