@@ -158,6 +158,7 @@ class ObstacleCourseNode(Node):
             self.min_speed = 0.2 #originally 0.075
             self.t_wait = 10.0 #if the pendulum hasn't come in front of the robot within this time, cross anyway
             self.wall_gap = 0.0
+            
         else:
             self.speed = 0.3  
             self.test_distance = 0.10
@@ -190,6 +191,7 @@ class ObstacleCourseNode(Node):
         self.course_heading = None    # heading (deg) to hold: the start heading, then the direction of the wall at each pendulum
         self.turning = False          # True while turning back to course_heading
         self.depth = 0.10             # the pendulum's thickness plus a margin
+        
         
 
 
@@ -488,11 +490,7 @@ def pendulum_step(node):
         if right > 0.04:                                           # stop about 6 cm from the wall
             node.move_2D(0.0, -max(node.min_speed, min(node.speed, right)), 0.0)
             return True
-        side = node.occupied_points[(np.abs(node.occupied_points[:, 0]) <= node.L) & (node.occupied_points[:, 1] < -node.W)
-                                    & (node.occupied_points[:, 1] > -node.W - 0.10)]          # the right wall, alongside the robot
-        if len(side) >= 5:                                         # hold the wall's direction from now on
-            node.course_heading = node.pose[2] + np.degrees(np.arctan(np.polyfit(side[:, 0], side[:, 1], 1)[0]))
-            node.turning = True
+        node.turning = True
         print(f"at the wall: lining up ({wrap_deg(node.course_heading - node.pose[2]):+.1f} deg), waiting for the pendulum")
         node.mode, node.mode_start, node.last_clear, node.seen, node.moving_at_line = 'wait', node.clock, node.clock, False, 0
 
