@@ -659,3 +659,38 @@ With wide swings, the rest were still waiting when the 4-minute test ended (some
 - **Decision:** don't hard-code a heading. Hold the heading the robot starts with (it is placed square to the course, and `course_heading` stays `None` until the first tick). At the end of `position`, the wall fit is replaced by `node.turning = True`, so the robot turns back to within 2° of the start heading before waiting.
 - **Why it's enough:** nothing depends on the local wall any more, and a few degrees of placement error are covered by the 6 cm wall gap and the slide-away fallback in `wait`.
 - **Watch for:** if it ever keeps rotating at the second pendulum again, the only remaining cause is a frozen pose (Optitrack drops out near there, V2-M5).
+
+## V2-D15: Final code for the graded run (own code, commit `6aadf26`) (2026-11-13)
+- **Last change:** no heading turns after the first pendulum (`self.crossed == 0` in the heading hold). The robot still kept rotating just before the second pendulum, near where Optitrack drops out (V2-M5). User: "lets just stop aligning after crossing the first pendulum. thats the easiest fix".
+- **How it works:**
+  - **Every tick (20 Hz):** LiDAR points in the robot frame. Heading hold to the start heading. Then the pendulum state machine; if that isn't driving, reactive navigation.
+  - **Navigation:** every 10 cm (or when blocked), score 16 directions: goal direction 315° + room + novelty − time spent nearby. Keep the current direction unless beaten by more than 0.1. Small sideways lane shifts line it up with gaps.
+  - **Pendulums:**
+    - detect motion by comparing scans 0.5 s apart;
+    - door check, then stand still 2 s to confirm it moves;
+    - creep to 10 cm before the line, slide to about 6 cm from the right wall, line up (first pendulum only);
+    - wait until the pendulum has passed in front and left (or a 4 s timeout), sliding away from the wall if the dash path is blocked;
+    - dash until the rear is 10 cm past the line; after the second, drive straight until 5 cm free: the goal.
+- **Changes since the first real run (2026-11-10), with the reason:**
+
+  | Change | Reason |
+  |---|---|
+  | All 16 directions checked only when choosing; vectorised `scan_to_points`; real-time clock | Jetson ran at 5–6 Hz |
+  | Heading hold 6°/2° at 0.2 rad/s | real delay made the old hold sway |
+  | `standoff` 0.10, goal stop at 5 cm free | LiDAR `range_min` 0.15 |
+  | Real `wall_gap` 0.08 | front bumps / blind zone |
+  | Detection window 0.15–1.0 m ahead, 1.2 m each side; trigger 10 points | false alarms; wide pendulum corridor |
+  | Door check with 2 cm side clearance (new `m` parameter in `free_distance`) | creeping past door posts |
+  | Slide away from the wall when the dash path is blocked | bent wall at the second pendulum |
+  | Real `visited_weight` 0.25, `w_new` 1.8, `goal_direction` 315 | tuning on the real course |
+  | Wall fit removed (V2-D14), no turning after the first pendulum | convex wall; Optitrack dropout |
+- **Tried and reverted:** `forward = min(speed, free)`. The robot "rammed through the pendulums" once, possibly network-related.
+- **If it hits obstacles during the graded run, change one at a time:**
+
+  | How it hits | Change |
+  |---|---|
+  | Front hits | `wall_gap` 0.08 → 0.10 |
+  | Side scrapes | default `m` 0.01 → 0.02 |
+  | Clips a door post on the creep | door-check `m` 0.02 → 0.03 |
+  | Hit by the pendulum during the dash | `in_front` margin 0.10 → 0.20 |
+- **Left in:** the per-tick `cross:` debug print and the long GO print. Stale comments: "5 cm"/"3 cm" in `position`, "counted in ticks", "2 m to each side".
