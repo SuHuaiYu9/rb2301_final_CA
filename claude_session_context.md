@@ -119,6 +119,13 @@ At most 5 pages. Parts: **Code explanation** (main logic and organisation, to ea
   - **5. Reflections and lessons learned:** "Simple is robust" (the user's text, plus one sentence on the prof's reactive suggestion); "The stale score bug" (the backwards-driving bug, then stored score -> current score, with simplified before/after code and "Lesson learnt"); "Measure before patching" (unchanged); "Gazebo is not the real robot" (test on the real robot early).
   - **Trims to fit 5 pages (cover excluded):** sim Table 2 removed; 2D numbers removed from prose in 3.2, 3.3 and 3.4; 3.4 items 2-3 shortened; 3.5 blind-zone working and the Jetson real-time-clock clause cut; Figure 2 at 14 cm; Figure 1 caption shortened. Result: cover + 5 full pages.
 - **User follow-up (2026-11-14):** confirmed they personally scrapped the map; their own code reached the real robot **about a week** before the graded run (the text now says so); **Table 2 (sim results) restored** at the end of 3.5 and cited in 3.3 ("almost stopped reversing direction (Table 2)"). Going over 5 pages is fine while drafting; the user will cut it down themselves (now cover + 6 pages).
+- **Section 3 rewritten in the user's style (2026-11-14, `claude_tools/report/edit_sec3.py`, run on `edit_refl.py`'s output; latest copy in `scratchpad/current/`):**
+  - **Unchanged:** 3.1, Figure 2 and its caption, and Table 2.
+  - **New headings:** 3.2 "Escaping the trap and finding the door", 3.3 "Hysteresis: no more flip-flopping", 3.4 "Telling real pendulums from false alarms", 3.5 "Making it work on the real hardware".
+  - **Light touches (deliberately few):** "could not make up its mind", "eventually gets fed up and leaves", "Our laptops never noticed, but the Jetson definitely did."
+  - **Kept:** the 3 key numbers (blind zone, 6/2 deg band with 0.2 rad/s x 0.15 s, 10/5 points), the window values and the Jetson 5-6 -> 20 Hz.
+  - 3.3 points to Section 5 for why the comparison uses the current score.
+  - Still cover + 6 pages (the user will cut).
 ### G. Waiting on the user / next steps
 1. **The user sends:**
    - run facts: times, trap placements, notes per run;
