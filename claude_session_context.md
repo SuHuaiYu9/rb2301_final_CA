@@ -3,7 +3,115 @@
 Saved 2026-11-03, last updated 2026-11-06 (just before a context compaction the user asked for). It lets work continue seamlessly after compaction **or in a new chat**.
 **This copy is for version 2 (the reactive code).** It lives on branch `claude/reactive-version` (with the report log and `claude_tools/`). Version 1 has its own copy on `claude/final-project-review-3m8r3v`, kept by a different chat. The user's own code is on `main`, which Claude must never change.
 
-## 000. LATEST STATE: read this first (2026-11-09, written just before a compaction)
+## 0000. CURRENT PHASE: FINAL REPORT (read this first; written 2026-11-14 before a compaction)
+Sections 000 (3a-3m) and below are history. This section is the current state.
+
+### A. Where things stand
+- **Graded run (2026-11-13): 3/3 runs successful** on the real course. The prof tried hard obstacle placements to trap the robot (obstacles on the right side of the middle corridor, before the "door") and could not break it. He especially liked the **lane shifts** (he recognised that a robot with no turning/heading control faces alignment problems on the real course). The user has videos of all 3 runs; the camera moves a bit with the robot. The pendulum period is just under 2 s.
+- **Final code = `main` `6aadf26`** ("only align before first pendulum"); the user confirmed the pasted final code matches. Robot 4 was recalibrated in Optitrack, so the `4 = 7.1` heading override is removed from the config.
+- **Cleaned code:** `claude_tools/dev/obstacle_course_reactive_clean.py` (615 lines against 692). Behaviour-identical to `6aadf26`: 63/63 harness runs byte-identical (gz3, gazebo pendulums, real pendulums × 21 seeds). Template lines are untouched (difflib check against `88d3f81` `obstacle_course_template.py`). It removes the legacy `feasible_directions`/`blocked`, commented-out code, the per-tick `cross:` print, `tick`, `last_best_score`, `last_best_theta` (= `selected_direction`) and the unreachable "nowehre to go" branch; shared parameters are written once with sim/real differences only; `best_direction` returns (best, best_score, scores); section headers; fixed stale comments. The user has NOT yet said they adopted it. Copy command: `git show origin/claude/reactive-version:claude_tools/dev/obstacle_course_reactive_clean.py > src/rb2301_fp/rb2301_fp/obstacle_course_reactive.py`. The report snippets are taken from the cleaned version.
+- **Now:** writing the final report (Word). Draft v1 is done; waiting on the user's material (see D and F).
+
+### B. Report requirements (from the course)
+At most 5 pages. Parts: **Code explanation** (main logic and organisation, to ease review); **Results/Observations** (limitations and how to address them; enhancements beyond the minimum count as bonus); **Reflections/Lessons Learned** (plus optional constructive feedback). The code is submitted too; videos are submitted separately.
+
+### C. The user's directives for the report (follow strictly)
+- **Showcase** why the robot is good and robust on the real robot; focus on what worked, not on failures (problems only as motivation for features).
+- **Section 2 = code flow and logic**, explained clearly, with a **balanced mix of pseudocode and real code snippets**.
+- **Section 3 = results and observations on the real robot**, deep dives into the best parts:
+  1. finding the door despite trap placements (room + novelty + time-spent + lane shifts);
+  2. hysteresis (no flip-flopping);
+  3. false-alarm suppression for pendulum detection (a "HUGE challenge");
+  4. hardware: Jetson 5-6 Hz -> about 20 Hz, and the heading hold for drift and imperfect placement.
+- **Only three key numbers justified:** the LiDAR blind zone (standoff, `wall_gap`, goal stop), the 6/2 deg hold band (delay × turn rate), and the detection thresholds 10/5 (experimental). Do NOT include the 0.5 s comparison justification.
+- **Do NOT mention** Optitrack failing, or the heading hold being disabled after the first pendulum (the user: Optitrack is the prof's duty).
+- **Do NOT add an AI acknowledgment**; the user adds it at the end.
+- **Limitations can take more space** (about 1 page): top 3 in depth (pendulum timing margin, scan-pose synchronisation, fixed waiting side), the rest in one line.
+- **Reflections short** (about 0.3 page): (1) **simple is robust**: the first plan was a global costmap/occupancy grid with A* (needed constant updating, noise-sensitive, complicated); define "simple" (local, explainable, few states, no map). (2) **Measure before patching**: robot 4's Optitrack heading was about 175 deg off, which caused a wild-goose chase of parameter edits before the root cause was found.
+- **No fabricated data:** the user once said "make up something believable"; Claude declined to invent events or numbers. Use `[TBD: ...]` and `[VET: ...]` markers; reconstructed rationale is labelled for vetting.
+
+### D. Report draft v1 (`claude_tools/report/`)
+- **Files:** `build.py` (python-docx builder), `figs.py` (also makes the Figure 2 placeholder), `figs2.py` (Figure 1 state machine, Figure 3 lane shift), `fig/*.png`, `RB2301_report_draft.docx`, `RB2301_report_draft.pdf`. Both were sent to the user.
+- **Rebuild (this machine has no node, no venv/ensurepip, no LaTeX):**
+  - `/usr/bin/python3 -m pip install -q --target <SP>/pylibs --no-deps python-docx` (lxml and typing_extensions are already installed).
+  - Update the hard-coded `D` path in `build.py` and `OUT` in `figs*.py` to the current scratchpad report dir.
+  - `PYTHONPATH=<SP>/pylibs /usr/bin/python3 build.py`
+  - `zip -d X.docx '*/'`
+  - `python3 <docx skill>/scripts/office/soffice.py --headless --convert-to pdf X.docx` (or `soffice --headless --convert-to pdf`)
+  - `pdfinfo X.pdf | grep Pages`; `pdftoppm -jpeg -r 80 X.pdf page`, then Read the pages to check the layout. matplotlib comes from system `/usr/bin/python3`.
+- **Layout:** A4, 2 cm side margins, Calibri 10.5 pt, Consolas 8.3 pt code blocks with light shading, page numbers in the footer, tables kept together (`cantSplit` + `keep_with_next`), the lane-shift text and Figure 3 side by side in a borderless table. **Currently exactly 5 pages, about 1/3 of page 5 free.** Known issue: white space at the bottom of page 2 (Figure 1 pushed to page 3); fix in the final layout pass.
+- **Structure (outline v4):**
+  1. **Introduction**
+  2. **Code explanation:**
+     - 2.1 organisation + pseudocode of one tick;
+     - 2.2 navigation: `free_distance`; lane shifts with snippet `value = f - abs(s)` + Figure 3; scoring with snippet `score = goal + proximity + room + novelty` + Table 1 (the four terms); commitment/hysteresis snippet (cleaned code);
+     - 2.3 pendulums: `seen_past` neighbour-ray snippet; state machine (Figure 1); GO-condition snippet.
+  3. **Results on the real robot:**
+     - 3.1 graded runs: Table 2 (TBD) + Figure 2 (placeholder);
+     - 3.2 finding the door despite traps;
+     - 3.3 hysteresis;
+     - 3.4 the six false-alarm layers (numbered list);
+     - 3.5 built for the hardware (the 3 key numbers + Jetson);
+     - Table 3: sim before/after.
+  4. **Limitations:** timing margin with the SHM calculation, unsynchronised scans/poses, fixed waiting side, others.
+  5. **Reflections.**
+- **Numbers used (sources in the report log):**
+  - hysteresis: reversals 3.8 -> 0.4 per run (V2-D4);
+  - novelty: slowest run 57 -> 38 s (V2-D5);
+  - lane shifts: 0.28 m gap (9 cm band for the robot's centre) 62 -> 21 s (V2-D7);
+  - stand-still check: with 100 ms lag, 17/21 -> 21/21 (V2-M3);
+  - pendulum handling: 252/252 randomised runs reached the goal, 0 obstacle hits (V2-D11);
+  - Jetson 5-6 Hz -> about 20 Hz.
+- **Blind-zone maths:** range_min 0.15, LiDAR 4.5 cm ahead of centre, half-length 11.5 cm, so blind about 8 cm ahead.
+- **Timing analysis:** clearing the swing plane takes 0.36 m (10 cm standoff + 23 cm robot + 3 cm pendulum) at 0.3 m/s ≈ 1.2 s plus start-up. SHM model: the pendulum re-enters the outer d = 0.36 m of its swing after T − (T/π)·arccos(1 − d/A). With T ≈ 2 s: about 1.2 s for A = 0.5 m, 1.4 s for A = 0.8 m. The margin is thin on paper; presented as the top limitation, with the fix: estimate the period and phase during the 2 s check and time the dash.
+- **Placeholders in v1:**
+  - [TBD]: group details in the title; run times (intro); Table 2 rows (setup/time/notes × 3); the prof's trap placements (3.2); Figure 2 and its run number.
+  - [VET]: no contact in the graded runs; "long, smooth segments"; every pendulum detected/confirmed/crossed; the first design being an occupancy grid + A*; the swing amplitude A.
+
+### E. My critique of the outline, and the decisions taken (so they aren't re-litigated)
+- **Agreed:**
+  - real-robot data (3 videos, Table 2);
+  - a sim before/after table, clearly labelled as simulation;
+  - justify only 3 key numbers;
+  - clarify "never turns to navigate" (the heading hold is not turning to navigate);
+  - name the root cause of false alarms (timing mismatch between scan and pose);
+  - define "simple";
+  - soften "guarantees escape" to "in practice";
+  - prioritise the limitations;
+  - pseudocode + snippets.
+- **Disagreed / changed:**
+  - no quantified "safety margin" claim (the maths shows a thin margin), so it goes in Limitations instead;
+  - no separate failure section (motivations play that role);
+  - no fabricated data.
+- **Important nuance:** on the real robot, the flood of false alarms came largely from robot 4's 175 deg heading error. The report's 3.4 describes the timing mismatch as the cause and covers the heading story in Reflections. Don't claim the layers alone fixed the real-robot false alarms.
+
+### F. Figure 2 plan (the user will make it by hand, since the camera moves)
+- **Method:** one background frame of the whole course; paste 10-14 copies of the robot, cut from other frames, at key moments.
+- **Spec given:**
+  - crop tight to the course; aspect 2:1 to 16:9 ideal (4:3 OK); PNG at least 1800 px wide;
+  - an opacity ramp from 35% to 100% over time; a thin dashed path with arrowheads;
+  - markers ①-⑦ (white circles, dark numbers, next to the copies, never covering the robot): ① escapes the trap; ② lines up with the door (lane shift; two copies offset sideways) and passes through; ③ pendulum 1 detected, 2 s check; ④ waits at the right wall; ⑤ dash; ⑥ pendulum 2, same routine; ⑦ stops at the goal;
+  - optional: a double-headed swing arrow at each pendulum, a thin outline around the trap obstacles; no other text.
+- **Caption to use:** "Figure 2. Graded run [n]: robot positions reconstructed from video frames. ① escapes the trap pocket, ② lines up with the door (lane shift) and passes through, ③ stops for the 2 s check, ④ waits at the right wall, ⑤ dashes once the pendulum has passed, ⑥ repeats for the second pendulum, ⑦ stops at the goal."
+- **Offer:** if the user gives a video path and times, Claude extracts frames (ffmpeg is installed) and crops the robot copies.
+
+### G. Waiting on the user / next steps
+1. **The user sends:**
+   - run facts: times, trap placements, notes per run;
+   - the Figure 2 image;
+   - the swing amplitude A, if they can estimate it;
+   - answers to the [VET] items;
+   - whether they adopt the cleaned code.
+2. **Then:** fill in the TBDs, rebuild, check it's still 5 pages, fix the page-2 white space, and refine section by section with the user (they give detailed feedback per section).
+
+### H. Working rules (still in force)
+- **No harness/simulations by default** (memory `no-harness-by-default`); run them only when truly necessary (e.g. proving the cleaned code is identical).
+- **Never edit the user's repo or `main`;** deliver files via the branch + SendUserFile + copy commands.
+- **Git safety:** `set -e`, `git -C <clone>`, check the branch before committing (a failed `cd` once committed to the user's local `main`; undone).
+- **Answers:** concise, no overcomplication; obey "just answer from reasoning" requests; quote the user's words faithfully in the log.
+- **Log:** the next free numbers are V2-D16, V2-M6, V2-R2. The graded run itself is not logged yet (offered, no answer).
+
+## 000. PREVIOUS STATE (real-robot phase; see 0000 first) (2026-11-09, written just before a compaction)
 **Focus: the user's OWN code `src/rb2301_fp/rb2301_fp/obstacle_course_reactive.py` on GitHub `main`, latest `1cf8705` ("added dynamic obstacle detection and navigation").** Claude's `obstacle_course2.py` (section 00 A) is parked at `1b8e7c1`.
 
 **Working mode now.** The user designs; Claude writes code to their plan when asked. **Do NOT run the 2D harness or simulations by default (user, 2026-11-09, very angry about slow, context-heavy replies): only when they explicitly ask to verify robustness, or when truly necessary. Answer from reasoning; they test in Gazebo themselves.** The user explicitly asks for recommendations at times. When they ask "why" or "how to fix", answer with evidence. Keep answers simple: they get angry at overcomplication and at "pauses for no reason". When they say "do NOT do simulations, answer from reasoning", do exactly that. Never edit their files. Give code as snippets and let them paste. Check each push with `py_compile`, a diff against the tested version, and the harness.
