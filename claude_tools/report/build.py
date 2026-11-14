@@ -168,8 +168,9 @@ para('The course has three parts: a zig-zag corridor with static obstacles, a na
 para('The robot is holonomic, so it **never turns to navigate**: it slides in any direction while holding its starting '
      'heading. Its own frame therefore stays lined up with the course, and every decision is made in that frame. The '
      'Optitrack pose is only used as memory: where the robot has been, where a pendulum is, and how far a dash has gone.')
-para('**All three graded runs on the real course were successful** [TBD: times], including runs where obstacles were '
-     'placed deliberately to trap the robot before the door. Figure 2 shows one of them.')
+para('**All three graded runs on the real course were successful.** Runs 1 and 2 cleared the course comfortably; for '
+     'run 3, the professor placed every cylinder to try to trap the robot before the door, and it still got through '
+     '(Figure 2).')
 
 # ------------------------------------------------------------------ 2
 h1('2. Code explanation')
@@ -258,25 +259,27 @@ figure('fig/fig1_states.png', 16.5, 'Figure 1. Pendulum state machine (pendulum_
 # ------------------------------------------------------------------ 3
 h1('3. Results and observations on the real robot')
 h2('3.1 Graded runs')
-para('All three graded runs reached the goal [VET: no contact with obstacles or pendulums]. Table 2 summarises them and '
-     'Figure 2 shows one run.')
-table(['Run', 'Course setup', 'Time', 'Notes'],
-      [['1', '[TBD]', '[TBD]', '[TBD]'], ['2', '[TBD]', '[TBD]', '[TBD]'], ['3', '[TBD]', '[TBD]', '[TBD]']],
-      [1.2, 6.8, 2.0, 7.0], 'Table 2. Graded runs on the real course (videos submitted separately).')
-figure('fig/fig2_placeholder.png', 14.5, 'Figure 2. Graded run [TBD]: frames about 1 s apart overlaid. ① escaping the trap, '
-       '② through the door, ③ 2 s check, ④ waiting at the wall, ⑤ dash, ⑥ second pendulum, ⑦ goal.')
+para('All three graded runs reached the goal [VET: no contact with obstacles or pendulums]; runs 1 and 2 cleared the '
+     'course comfortably. For run 3, the professor placed every cylinder to try to trap the robot before the door. '
+     'Figure 2 traces that run (videos of all three runs are submitted separately).')
+figure('fig/fig2_trap_run.png', 16.0, 'Figure 2. Graded run 3; path traced from the video (approximate). ① start; '
+       '② probes past a cylinder, finds little room ahead and backs out; ③ a 2 s stand-still check rejects a suspected '
+       'pendulum; ④ slides right along the corridor (the real robot in this frame); ⑤ the goal pull leads into the '
+       'dead-end pocket, where the time-spent penalty builds; ⑥ leaves on a fresh lane through the gap between '
+       'obstacles; ⑦ finds the door. Both pendulum crossings and the goal stop follow, out of frame.')
 
 h2('3.2 Always finding the door, even when trapped')
-para('[TBD: the professor\'s placements, e.g. obstacles on the right side of the middle corridor.] These placements '
-     'target a weakness of goal-seeking robots: our goal direction (forward-right) pulls the robot into exactly those '
-     'right-side pockets. Ours escapes for three complementary reasons:')
-bullets(['**Room** makes the open way out of a pocket attractive.',
-         '**Novelty** drops to zero for every direction into a pocket after a single visit, so the robot does not go back in.',
+para('Run 3 targets a weakness of goal-seeking robots: our goal direction (forward-right) pulls the robot into exactly '
+     'the right-hand pocket of the middle corridor (Figure 2, ⑤). Ours escapes for three complementary reasons:')
+bullets(['**Room** makes the open way out of a pocket attractive, and a dead end unattractive before the robot is in it: '
+         'at ② it backed out of the narrow gap beside the cylinder.',
+         '**Novelty** drops to zero for every direction into a pocket after a single visit, so the robot does not go back '
+         'in; at ⑥ it even left on a fresh lane rather than the way it came.',
          '**Time spent** keeps growing while the robot lingers, so it leaves even where everything nearby has been '
-         'visited and novelty no longer helps.'])
+         'visited and novelty no longer helps (⑤).'])
 para('Once out, **lane shifts** let it line up with the door from wherever it arrives, instead of having to arrive '
-     'exactly aligned, the main difficulty for a robot that never turns (Figure 2, ①–②). In development tests '
-     '(Table 3), adding novelty cut the slowest run from 57 s to 38 s, and lane shifts cut the time through a 0.28 m '
+     'exactly aligned, the main difficulty for a robot that never turns (⑦). In development tests '
+     '(Table 2), adding novelty cut the slowest run from 57 s to 38 s, and lane shifts cut the time through a 0.28 m '
      'gap, where the robot\'s centre has only a 9 cm band, from 62 s to 21 s.')
 
 h2('3.3 Decisive motion: hysteresis')
@@ -301,7 +304,8 @@ bullets(['both-way test, needing the ray **and both neighbours** to see 10 cm pa
          'a crossing counts only if motion was seen at the line, so a false line can never start the final drive to the goal.'],
         style='List Number')
 para('With 100 ms of scan delay in our 2D tests, the stand-still check alone raised successful runs from 17/21 to 21/21. '
-     'On the real course, every pendulum in the graded runs was detected, confirmed and crossed [VET: video/terminal].')
+     'On the real course, every pendulum in the graded runs was detected, confirmed and crossed [VET: video/terminal], '
+     'and run 3, which lasted 1 min 25 s, had only two or three false alarms, each costing a 2 s stop (Figure 2, ③).')
 
 h2('3.5 Built for the real hardware')
 para('Three key numbers come from the hardware rather than from tuning:')
@@ -325,7 +329,7 @@ table(['Feature', 'Without', 'With'],
        ['Lane shifts (0.28 m gap)', '62 s to get through', '21 s to get through'],
        ['2 s stand-still check (100 ms scan delay)', '17/21 runs through', '21/21 runs through'],
        ['Pendulum handling (252 randomised runs)', '–', '252/252 reached the goal, no obstacle hits']],
-      [7.0, 4.5, 5.5], 'Table 3. Effect of each feature in our 2D simulator (21 random layouts unless stated).')
+      [7.0, 4.5, 5.5], 'Table 2. Effect of each feature in our 2D simulator (21 random layouts unless stated).')
 
 # ------------------------------------------------------------------ 4
 h1('4. Limitations and future work')

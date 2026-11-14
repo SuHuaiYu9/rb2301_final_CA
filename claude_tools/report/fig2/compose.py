@@ -50,19 +50,20 @@ spr = cv2.imread(B + 'images/17.png')[..., :3]; msk = cv2.imread(B + 'scratchpad
 x, y, w, h = cv2.boundingRect(msk); spr, msk = spr[y:y + h, x:x + w], msk[y:y + h, x:x + w]
 msk = cv2.GaussianBlur(msk, (3, 3), 0)
 YH, K = -250.0, 1.1 * 150.0 / 995.0                     # horizon row and scale, from the real robot at 0:17
-def paste(img, base, alpha=0.92):
+def paste(img, base, alpha=0.92, flip=False):
     bx, by = base
     wpx = K * (by - YH); hpx = wpx * h / w * 0.93      # slight squash for the lower camera angle
     W, Hh = int(wpx * S), int(hpx * S)
     s = cv2.resize(spr, (W, Hh), interpolation=cv2.INTER_AREA); a = cv2.resize(msk, (W, Hh)) / 255.0 * alpha
+    if flip: s, a = s[:, ::-1], a[:, ::-1]
     x0, y0 = int(bx * S - W / 2), int(by * S - Hh)
     roi = img[y0:y0 + Hh, x0:x0 + W]
     roi[:] = (roi * (1 - a[..., None]) + s * a[..., None]).astype(np.uint8)
     return (bx, by - hpx / 2), wpx, hpx
 
 # robot copies at key moments (0:16 floor points); 4 is the real robot already in the frame
-copies = {1: (175, 965), 2: (318, 648), 5: (1655, 612), 6: (1300, 610), 7: (905, 452)}
-info = {k: paste(big, T([v])[0]) for k, v in copies.items()}
+copies = {1: (175, 965), 2: (318, 648), 5: (1655, 612), 6: (1300, 610)}
+info = {k: paste(big, T([v])[0], flip=T([v])[0][0] > 980) for k, v in copies.items()}
 
 for p in paths: draw_path(big, p, 7)
 # arrowheads: mid-corridor, mid-lane, and the end at the door
