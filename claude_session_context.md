@@ -113,6 +113,11 @@ At most 5 pages. Parts: **Code explanation** (main logic and organisation, to ea
   - **The prof's habit:** he names the "next-level" version of a mechanism (P-control, turn-penalised A*). Pre-empt it in Future work, e.g. a P-controlled heading hold instead of a constant 0.2 rad/s, choosing the waiting side, timing the dash from the period, tuning the weights.
 - **Working rule (memory `report-own-words`, revised):** Claude may draft, but in plain explanatory sentences with few numbers and no working; keep the user's voice; figures and real-robot evidence over 2D-sim tables; reflections + future work about 1-1.3 pages with concrete before/after stories; an honest AI acknowledgment covering report drafting and AI-originated ideas (lane shifts came from Claude's reference code).
 
+- **Sections 4-5 rewritten (2026-11-14, `claude_tools/report/edit_refl.py`, applied to a copy of the cover version in `scratchpad/refl/`):** written in the user's style (plain, first person, light humour, "Turns out", "Lesson learnt"), almost no numbers.
+  - **4.1 Limitations:** pendulum timing; scans/poses not matched in time; always waiting on the right; the user's own no-turn sentence.
+  - **4.2 With more time:** time the dash from the period; match each scan to its pose; choose the waiting side; a P-controlled heading hold (pre-empting the prof); auto-tune the weights.
+  - **5. Reflections and lessons learned:** "Simple is robust" (the user's text, plus one sentence on the prof's reactive suggestion); "The stale score bug" (the backwards-driving bug, then stored score -> current score, with simplified before/after code and "Lesson learnt"); "Measure before patching" (unchanged); "Gazebo is not the real robot" (test on the real robot early).
+  - **Trims to fit 5 pages (cover excluded):** sim Table 2 removed; 2D numbers removed from prose in 3.2, 3.3 and 3.4; 3.4 items 2-3 shortened; 3.5 blind-zone working and the Jetson real-time-clock clause cut; Figure 2 at 14 cm; Figure 1 caption shortened. Result: cover + 5 full pages.
 ### G. Waiting on the user / next steps
 1. **The user sends:**
    - run facts: times, trap placements, notes per run;
