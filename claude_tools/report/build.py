@@ -262,9 +262,9 @@ h2('3.1 Graded runs')
 para('All three graded runs reached the goal [VET: no contact with obstacles or pendulums]; runs 1 and 2 cleared the '
      'course comfortably. For run 3, the professor placed every cylinder to try to trap the robot before the door. '
      'Figure 2 traces that run (videos of all three runs are submitted separately).')
-figure('fig/fig2_trap_run.png', 16.0, 'Figure 2. Graded run 3; path traced from the video (approximate). ① start; '
+figure('fig/fig2_run3.jpg', 16.0, 'Figure 2. Graded run 3; path traced from the video (approximate). ① start; '
        '② probes past a cylinder, finds little room ahead and backs out; ③ a 2 s stand-still check rejects a suspected '
-       'pendulum; ④ slides right along the corridor (the real robot in this frame); ⑤ the goal pull leads into the '
+       'pendulum; ④ slides right along the corridor; ⑤ the goal pull leads into the '
        'dead-end pocket, where the time-spent penalty builds; ⑥ leaves on a fresh lane through the gap between '
        'obstacles; ⑦ finds the door. Both pendulum crossings and the goal stop follow, out of frame.')
 
