@@ -126,6 +126,7 @@ At most 5 pages. Parts: **Code explanation** (main logic and organisation, to ea
   - **Kept:** the 3 key numbers (blind zone, 6/2 deg band with 0.2 rad/s x 0.15 s, 10/5 points), the window values and the Jetson 5-6 -> 20 Hz.
   - 3.3 points to Section 5 for why the comparison uses the current score.
   - Still cover + 6 pages (the user will cut).
+- **Section 2 rewritten in the user's style (2026-11-14, `claude_tools/report/edit_sec2.py`, input = the section-3 version):** prose paragraphs only; code blocks, Table 1, Figures 1 and 3 and their captions untouched. The user's edits are kept ("The helper function “pendulum_step”", "slides rightwards", "(aka the dynamic obstacles)"). One light touch: "(the course is rarely that kind)". Dropped the lane-shift speed numbers. Latest copy: `scratchpad/current/` (cover + 6 pages). Section 1 (intro) is not rewritten yet.
 ### G. Waiting on the user / next steps
 1. **The user sends:**
    - run facts: times, trap placements, notes per run;
