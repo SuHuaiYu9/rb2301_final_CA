@@ -134,6 +134,20 @@ At most 5 pages. Parts: **Code explanation** (main logic and organisation, to ea
   - **Code snippets kept:** lane value, score line, hysteresis, seen_past neighbours, the GO condition.
   - **Figures renumbered in order of appearance:** 1 = lane shift, 2 = state machine, 3 = run-3 composite. The Figure 3 caption ending is restored ("follow, out of frame.").
   - **Size:** cover + 6 pages (the user will cut). There is white space at the bottom of body page 2, because Figure 2 doesn't fit there.
+### F4. FINAL COPY (2026-11-14): THE USER'S OWN EDIT
+- **The submission copy is `~/Downloads/rb2301_final_project-main/rb2301_final_project_report_rewritten3_myself.pdf`** (made in Microsoft Word by the user). The user said it is the most up-to-date copy and they will submit it. All of Claude's copies (`scratchpad/current/`, the `.odt` files, `rewrite_all.py` output) are now OUTDATED. Never rebuild or overwrite over the user's version.
+- **It fits:** cover + 5 pages; sections 1-6 (6 = AI declaration and external libraries, still being finalised by the user).
+- **Declined suggestions (closed, don't raise again; memory `dont-reraise-declined-suggestions`):**
+  - typos/grammar;
+  - the Figure 3 caption grammar;
+  - "stopped these reversals" vs 0.4 in Table 2;
+  - the prof quote "does not want to see A* or mapping";
+  - "OptiTrack pose only used as a memory";
+  - "(why did the robot cross the road?)".
+- **The user confirmed it is ready apart from the AI declaration.**
+- **AI declaration facts given to the user:** `blocked()` was replaced by `free_distance()` (feasibility = best lane's free distance >= 10 cm + `wall_gap`). Claude wrote the NumPy version of `free_distance()` (steps x points table, `np.any`/`np.argmax`) and vectorised `scan_to_points()` (Jetson fix). The 2D simulator was built by AI, which also ran the tests and analysed the results behind Table 2. Lane shifts came from Claude's reference code.
+- **Code:** the repo's `obstacle_course_reactive.py` = the cleaned version minus its top docstring (uncommitted on the user's machine).
+
 ### G. Waiting on the user / next steps
 1. **The user sends:**
    - run facts: times, trap placements, notes per run;
