@@ -85,20 +85,19 @@ At most 5 pages. Parts: **Code explanation** (main logic and organisation, to ea
   - no fabricated data.
 - **Important nuance:** on the real robot, the flood of false alarms came largely from robot 4's 175 deg heading error. The report's 3.4 describes the timing mismatch as the cause and covers the heading story in Reflections. Don't claim the layers alone fixed the real-robot false alarms.
 
-### F. Figure 2 plan (the user will make it by hand, since the camera moves)
-- **Method:** one background frame of the whole course; paste 10-14 copies of the robot, cut from other frames, at key moments.
-- **Spec given:**
-  - crop tight to the course; aspect 2:1 to 16:9 ideal (4:3 OK); PNG at least 1800 px wide;
-  - an opacity ramp from 35% to 100% over time; a thin dashed path with arrowheads;
-  - markers ①-⑦ (white circles, dark numbers, next to the copies, never covering the robot): ① escapes the trap; ② lines up with the door (lane shift; two copies offset sideways) and passes through; ③ pendulum 1 detected, 2 s check; ④ waits at the right wall; ⑤ dash; ⑥ pendulum 2, same routine; ⑦ stops at the goal;
-  - optional: a double-headed swing arrow at each pendulum, a thin outline around the trap obstacles; no other text.
-- **Caption to use:** "Figure 2. Graded run [n]: robot positions reconstructed from video frames. ① escapes the trap pocket, ② lines up with the door (lane shift) and passes through, ③ stops for the 2 s check, ④ waits at the right wall, ⑤ dashes once the pendulum has passed, ⑥ repeats for the second pendulum, ⑦ stops at the goal."
-- **Offer:** if the user gives a video path and times, Claude extracts frames (ffmpeg is installed) and crops the robot copies.
+### F. Figure 2: DONE as v1 (2026-11-14), the trap-escape composite
+- **Changed role:** the user chose the **hardest graded run** (the prof's trap placement) and gave a screenshot with their hand-drawn path, a clean frame (video 0:17) and a close-up of the robot. The frame shows start -> door only, so Figure 2 now illustrates **3.2 (finding the door despite traps)**, not the whole run; the pendulum markers were dropped.
+- **The trajectory (user's account):** start bottom-left; forward-right towards the middle corridor; probes slightly past a white cylinder (on the cylinder's left), backs out (user: probably low room ahead/front-left); stops about 2 s in front-left of that cylinder (a `check`, i.e. a false alarm: the only 2 s stand-still in navigate); slides right along the near side of the corridor; goes up into the dead-end pocket at the top-right of the middle corridor and bounces around; leaves leftwards on the far side of the corridor (a different lane: novelty), cuts up-left through the gap between the dark cylinders, finds the door. Pendulums and goal follow out of frame.
+- **New facts from the user:** this run's trajectory lasted **1 min 25 s**; the user counted **only 2-3 false alarms in the whole run** (each a 2 s check).
+- **How it was made** (`claude_tools/report/fig2/`): `align.py` (SIFT + RANSAC homography from the scribbled 0:16 frame to the clean 0:17 frame, median error 0.9 px, so the user's line maps exactly); `cut.py` (robot cut-out: hand outline + GrabCut -> `robot_mask.png`); `compose.py` (Chaikin-smoothed path drawn over the robot copies, red with white halo, chevrons, end arrow; dashed yellow outline of the pocket; robot copies at 1, 2, 5, 6, 7 sized by depth (horizon row about -250, scale from the real robot); 4 = the real robot in the frame; markers 1-7; crop rows 95-1075 -> 2000x980). The source screenshots (`images/16.webp` scribbled, `18.webp` clean, `17.png` robot) are in the session images folder only and were **NOT pushed: this repo is public and the frames show classmates**. The final PNG was sent to the user and copied to `report/fig/fig2_trap_run.png` in the scratchpad.
+- **Markers:** 1 start; 2 probes past the cylinder, backs out; 3 the 2 s check (false alarm dismissed); 4 slides right (real robot); 5 dead-end pocket; 6 leaves on a fresh lane through the gap; 7 the door.
+- **Draft caption:** "Figure 2. Graded run [n], the hardest obstacle placement; path traced from the video (approximate). (1) start; (2) probes past the cylinder, finds little room ahead and backs out; (3) a 2 s stand-still check rejects a suspected pendulum; (4) slides right along the corridor (the real robot in this frame); (5) the goal pull leads into the dead-end pocket, where the time-spent penalty builds; (6) leaves on a fresh lane through the gap between obstacles; (7) finds the door. Both pendulum crossings and the goal stop follow, out of frame."
+- **Not yet in the docx:** the draft still has the placeholder in 3.1; move Figure 2 to 3.2 and reference the markers in the 3.2 text when rebuilding.
 
 ### G. Waiting on the user / next steps
 1. **The user sends:**
    - run facts: times, trap placements, notes per run;
-   - the Figure 2 image;
+   - the run number of the trap run (Figure 2) and approval of Figure 2 v1;
    - the swing amplitude A, if they can estimate it;
    - answers to the [VET] items;
    - whether they adopt the cleaned code.
