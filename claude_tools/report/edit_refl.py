@@ -75,8 +75,8 @@ new = ''.join([
     'recompute it from what the robot sees right now.'),
   measure,
   P('**Gazebo is not the real robot.** Most of the hardware problems in Section 3.5, like the slow Jetson and the '
-    'LiDAR\'s blind spot, never showed up on Gazebo. We only got our own code onto the real robot a few days before the '
-    'graded run, so they all had to be fixed in a rush. Next time, I would test even a half-finished version on the real '
+    'LiDAR\'s blind spot, never showed up on Gazebo. We only got our own code onto the real robot about a week before '
+    'the graded run, so they all had to be fixed in a rush. Next time, I would test even a half-finished version on the real '
     'robot as early as possible.'),
 ])
 x = x[:a] + new + x[b:]
@@ -87,14 +87,10 @@ one(' In development tests <text:soft-page-break/>(Table 2), adding novelty cut 
     'only a 9 cm band, from 62 s to 21 s.', '')
 one('Direction reversals (turns of 135° or more) fell from <text:span text:style-name="T17">about 4</text:span> to 0.<text:span '
     'text:style-name="T17">5</text:span> per run in tests, and on the real course the robot moves in long, smooth segments.',
-    'In our tests the robot almost stopped reversing direction, and on the real course it moves in long, smooth segments.')
+    'In our tests the robot almost stopped reversing direction (Table 2), and on the real course it moves in long, smooth segments.')
 one('With 100 ms of scan delay in our <text:span text:style-name="T20">private simulated</text:span> tests, the stand-still '
     'check alone raised successful runs from 17/21 to 21/21. On the real course', 'On the real course')
-t0 = x.index('<text:p text:style-name="P16"><text:soft-page-break/><text:span text:style-name="T9">Table 2. Effect of each feature')
-t1 = x.index('</table:table>', t0) + len('</table:table>')
-E = '<text:p text:style-name="P17"/>'
-assert x[t1:t1 + len(E)] == E
-x = x[:t0] + x[t1 + len(E):]
+# (Table 2, the simulator results, is kept: the user wants it)
 
 
 one('only a window in front of the robot (0.15–1.0 m ahead, ±1.2 m sideways), so nothing beside it or outside the corridor ahead can trigger it;',

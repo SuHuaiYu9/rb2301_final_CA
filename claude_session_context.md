@@ -118,6 +118,7 @@ At most 5 pages. Parts: **Code explanation** (main logic and organisation, to ea
   - **4.2 With more time:** time the dash from the period; match each scan to its pose; choose the waiting side; a P-controlled heading hold (pre-empting the prof); auto-tune the weights.
   - **5. Reflections and lessons learned:** "Simple is robust" (the user's text, plus one sentence on the prof's reactive suggestion); "The stale score bug" (the backwards-driving bug, then stored score -> current score, with simplified before/after code and "Lesson learnt"); "Measure before patching" (unchanged); "Gazebo is not the real robot" (test on the real robot early).
   - **Trims to fit 5 pages (cover excluded):** sim Table 2 removed; 2D numbers removed from prose in 3.2, 3.3 and 3.4; 3.4 items 2-3 shortened; 3.5 blind-zone working and the Jetson real-time-clock clause cut; Figure 2 at 14 cm; Figure 1 caption shortened. Result: cover + 5 full pages.
+- **User follow-up (2026-11-14):** confirmed they personally scrapped the map; their own code reached the real robot **about a week** before the graded run (the text now says so); **Table 2 (sim results) restored** at the end of 3.5 and cited in 3.3 ("almost stopped reversing direction (Table 2)"). Going over 5 pages is fine while drafting; the user will cut it down themselves (now cover + 6 pages).
 ### G. Waiting on the user / next steps
 1. **The user sends:**
    - run facts: times, trap placements, notes per run;
