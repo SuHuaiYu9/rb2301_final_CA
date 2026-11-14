@@ -45,26 +45,34 @@ cx, cy = T([(1620, 585)])[0]
 ell = cv2.ellipse2Poly((int(cx * S), int(cy * S)), (int(255 * S), int(105 * S)), -4, 0, 360, 2)
 for j in range(0, len(ell) - 1, 8):
     cv2.polylines(big, [ell[j:j + 5]], False, (0, 215, 255), 5 * S, cv2.LINE_AA)
-# robot sprite
-spr = cv2.imread(B + 'images/17.png')[..., :3]; msk = cv2.imread(B + 'scratchpad/fig2/robot_mask.png', 0)
-x, y, w, h = cv2.boundingRect(msk); spr, msk = spr[y:y + h, x:x + w], msk[y:y + h, x:x + w]
-msk = cv2.GaussianBlur(msk, (3, 3), 0)
-YH, K = -250.0, 1.1 * 150.0 / 995.0                     # horizon row and scale, from the real robot at 0:17
-def paste(img, base, alpha=0.92, flip=False):
-    bx, by = base
-    wpx = K * (by - YH); hpx = wpx * h / w * 0.93      # slight squash for the lower camera angle
-    W, Hh = int(wpx * S), int(hpx * S)
-    s = cv2.resize(spr, (W, Hh), interpolation=cv2.INTER_AREA); a = cv2.resize(msk, (W, Hh)) / 255.0 * alpha
-    if flip: s, a = s[:, ::-1], a[:, ::-1]
+# robot photos, each taken from the video where the camera sees the robot from that side:
+# 17 = rear-right (left of the frame: 1, 2), 19 = rear-left (5), 20 = straight from behind (6, 7)
+def load(n, mask, plate_px, squash=1.0):
+    spr = cv2.imread(B + f'images/{n}.png')[..., :3]; msk = cv2.imread(B + 'scratchpad/fig2/' + mask, 0)
+    x, y, w, h = cv2.boundingRect(msk)
+    return dict(s=spr[y:y + h, x:x + w], m=cv2.GaussianBlur(msk[y:y + h, x:x + w], (3, 3), 0),
+                plate=plate_px, squash=squash)
+SPR = {'17': load('17', 'robot_mask.png', 170, 0.93), '19': load('19', 'robot_mask_19.png', 88),
+       '20': load('20', 'robot_mask_20.png', 115)}
+# size from depth: the real robot's marker plate is 117 px wide with its wheels at row 755 (0:17 frame);
+# apparent size grows linearly with the distance below the horizon row YH; VP = column where the robot is seen head-on
+YH, KP, VPX, F = -250.0, 117.0 / (755.0 + 250.0), 976.0, 1400.0
+def paste(img, base, name, alpha=0.95):
+    bx, by = base; sp = SPR[name]
+    cosb = np.cos(np.arctan((bx - VPX) / F))              # the plate looks narrower when seen at an angle
+    k = KP * (by - YH) * cosb / sp['plate']
+    W, Hh = int(sp['s'].shape[1] * k * S), int(sp['s'].shape[0] * k * sp['squash'] * S)
+    s = cv2.resize(sp['s'], (W, Hh), interpolation=cv2.INTER_AREA); a = cv2.resize(sp['m'], (W, Hh)) / 255.0 * alpha
     x0, y0 = int(bx * S - W / 2), int(by * S - Hh)
     roi = img[y0:y0 + Hh, x0:x0 + W]
     roi[:] = (roi * (1 - a[..., None]) + s * a[..., None]).astype(np.uint8)
-    return (bx, by - hpx / 2), wpx, hpx
 
-# robot copies at key moments (0:16 floor points); 4 is the real robot already in the frame
-copies = {1: (175, 965), 2: (318, 648), 5: (1655, 612), 6: (1300, 610)}
-info = {k: paste(big, T([v])[0], flip=T([v])[0][0] > 980) for k, v in copies.items()}
+# robot copies at key moments (0:16 floor points, photo); 4 is the real robot already in the frame
+copies = {1: ((175, 965), '17'), 2: ((318, 648), '17'), 5: ((1655, 612), '19'), 6: ((1300, 610), '20'),
+          7: ((905, 452), '20')}
+for k, (v, name) in copies.items(): paste(big, T([v])[0], name)
 
+# path on top of the copies
 for p in paths: draw_path(big, p, 7)
 # arrowheads: mid-corridor, mid-lane, and the end at the door
 chevron(big, paths[2], len(paths[2]) // 2); chevron(big, paths[2], len(paths[2]) // 5)
@@ -78,7 +86,7 @@ def marker(img, c, n, r=27):
     cv2.circle(img, c, (r + 3) * S, DARK, -1, cv2.LINE_AA); cv2.circle(img, c, r * S, WHITE, -1, cv2.LINE_AA)
     t = str(n); fs = 1.25 * S; (tw, th), _ = cv2.getTextSize(t, cv2.FONT_HERSHEY_DUPLEX, fs, 2 * S)
     cv2.putText(img, t, (c[0] - tw // 2, c[1] + th // 2), cv2.FONT_HERSHEY_DUPLEX, fs, DARK, 2 * S, cv2.LINE_AA)
-mk = {1: (55, 925), 2: (185, 560), 3: (215, 720), 4: (975, 805), 5: (1835, 470), 6: (1330, 455), 7: (815, 390)}
+mk = {1: (55, 925), 2: (185, 560), 3: (195, 680), 4: (975, 805), 5: (1835, 470), 6: (1283, 372), 7: (795, 390)}
 for n, p in mk.items(): marker(big, T([p])[0], n)
 
 out = cv2.resize(big, None, fx=1 / S, fy=1 / S, interpolation=cv2.INTER_AREA)[95:1075]
